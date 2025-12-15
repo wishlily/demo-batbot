@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="batbot">
+  <!-- Include the material -->
+  <xacro:include filename="$(find batbot_description)/urdf/batbot/material/material.urdf.xacro" />
+  <!-- Include the base robot -->
+  <xacro:include filename="$(find batbot_description)/urdf/batbot/base.urdf.xacro" />
+  <!-- Include the actuator -->
+  <xacro:include filename="$(find batbot_description)/urdf/batbot/actuator/wheel.urdf.xacro" />
+  <!-- Include the sensor -->
+  <xacro:include filename="$(find batbot_description)/urdf/batbot/sensor/imu.urdf.xacro" />
+
+  <xacro:base_xacro size="0.1665 0.149 0.025" base_footprint_z="0.0225" />
+  <xacro:wheel_xacro wheel_name="front_left" length="0.02" radius="0.0225" xyz="0.05 0.0845 0" />
+  <xacro:wheel_xacro wheel_name="front_right" length="0.02" radius="0.0225" xyz="0.05 -0.0845 0" />
+  <xacro:wheel_xacro wheel_name="back_left" length="0.02" radius="0.0225" xyz="-0.05 0.0845 0" />
+  <xacro:wheel_xacro wheel_name="back_right" length="0.02" radius="0.0225" xyz="-0.05 -0.0845 0" />
+  <xacro:imu_xacro size="0.02 0.02 0.02" xyz="-0.06 -0.025 0.03" />
+</robot>

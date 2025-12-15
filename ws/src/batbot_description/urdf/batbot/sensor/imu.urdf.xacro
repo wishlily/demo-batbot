@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find batbot_description)/urdf/batbot/common_inertia.xacro" />
+
+  <xacro:macro name="imu_xacro" params="size xyz">
+
+    <xacro:property name="size_values" value="${size.split(' ')}" />
+    <xacro:property name="size_x" value="${float(size_values[0])}" />
+    <xacro:property name="size_y" value="${float(size_values[1])}" />
+    <xacro:property name="size_z" value="${float(size_values[2])}" />
+
+    <link name="imu_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <box size="${size}" />
+        </geometry>
+        <material name="blue" />
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <box size="${size}" />
+        </geometry>
+        <material name="blue" />
+      </collision>
+      <xacro:box_inertia m="0.01" x="${size_x}" y="${size_y}" z="${size_z}" />
+    </link>
+
+    <joint name="imu_joint" type="fixed">
+      <parent link="base_link" />
+      <child link="imu_link" />
+      <origin xyz="${xyz}" />
+    </joint>
+
+  </xacro:macro>
+</robot>

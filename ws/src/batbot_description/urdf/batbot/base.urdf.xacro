@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find batbot_description)/urdf/batbot/common_inertia.xacro" />
+
+  <xacro:macro name="base_xacro" params="size base_footprint_z">
+
+    <xacro:property name="size_values" value="${size.split(' ')}" />
+    <xacro:property name="size_x" value="${float(size_values[0])}" />
+    <xacro:property name="size_y" value="${float(size_values[1])}" />
+    <xacro:property name="size_z" value="${float(size_values[2])}" />
+
+    <link name="base_footprint" />
+
+    <joint name="base_joint" type="fixed">
+      <parent link="base_footprint" />
+      <child link="base_link" />
+      <origin xyz="0.0 0.0 ${base_footprint_z}" rpy="0 0 0" />
+    </joint>
+
+    <link name="base_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <box size="${size}" />
+        </geometry>
+        <material name="white" />
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <box size="${size}" />
+        </geometry>
+        <material name="white" />
+      </collision>
+      <xacro:box_inertia m="1.0" x="${size_x}" y="${size_y}" z="${size_z}" />
+    </link>
+
+    <link name="bracket_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <box size="${size_x*0.7} ${size_y} 0.045" />
+        </geometry>
+        <material name="gray" />
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <box size="${size_x*0.7} ${size_y} 0.045" />
+        </geometry>
+        <material name="gray" />
+      </collision>
+      <xacro:box_inertia m="1.0" x="${size_x*0.7}" y="${size_y}" z="0.045" />
+    </link>
+
+    <joint name="bracket_joint" type="fixed">
+      <parent link="base_link" />
+      <child link="bracket_link" />
+      <origin xyz="${(size_x*-0.3)/2.0} 0 ${(size_z+0.045)/2.0}" rpy="0 0 0" />
+    </joint>
+
+  </xacro:macro>
+</robot>
