@@ -1,0 +1,24 @@
+<%
+  # Receiving parameters: wall length, wall height, wall thickness
+  # default 1.0 x 1.0 x 0.2
+  l = defined?(length) ? length.to_f : 1.0
+  h = defined?(height) ? height.to_f : 1.0
+  t = defined?(thickness) ? thickness.to_f : 0.2
+%>
+<sdf version="1.8">
+  <model name="wall_<%= l %>m">
+    <static>true</static>
+    <link name="link">
+      <collision name="collision">
+        <geometry><box><size><%= l %> <%= t %> <%= h %></size></box></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><box><size><%= l %> <%= t %> <%= h %></size></box></geometry>
+        <material>
+          <ambient>0.8 0.5 0.2 1</ambient>
+          <diffuse>0.8 0.5 0.2 1</diffuse>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

@@ -1,0 +1,55 @@
+<%
+  # Receive parameters: length, width, height(wall)
+  L = defined?(length) ? length.to_f : 10.0
+  W = defined?(width)  ? width.to_f  : 10.0
+  H = defined?(height) ? height.to_f : 1.0
+  # Gen file names
+  wall_l_uri = defined?(wall_l_uri) ? wall_l_uri : "wall_l.sdf"
+  wall_w_uri = defined?(wall_w_uri) ? wall_w_uri : "wall_w.sdf"
+  ground_uri = defined?(ground_uri) ? ground_uri : "ground.sdf"
+  # Calculate offsets
+  x_off = L / 2.0
+  y_off = W / 2.0
+  z_pos = H / 2.0
+  pi_over_2 = Math::PI / 2
+%>
+<sdf version="1.8">
+  <world name="empty_room">
+    <!-- 1. Ground -->
+    <include>
+      <uri>file://<%= ground_uri %></uri>
+      <name>floor</name>
+    </include>
+
+    <!-- 2. Four walls -->
+
+    <!-- (+Y) (Length) -->
+    <include>
+      <uri>file://<%= wall_l_uri %></uri>
+      <name>wall_west</name>
+      <pose>0 <%= y_off %> <%= z_pos %> 0 0 0</pose>
+    </include>
+
+    <!-- (-Y) (Length) -->
+    <include>
+      <uri>file://<%= wall_l_uri %></uri>
+      <name>wall_east</name>
+      <pose>0 <%= -y_off %> <%= z_pos %> 0 0 0</pose>
+    </include>
+
+    <!-- (+X) (Width) (pi/2) -->
+    <include>
+      <uri>file://<%= wall_w_uri %></uri>
+      <name>wall_north</name>
+      <pose><%= x_off %> 0 <%= z_pos %> 0 0 <%= pi_over_2 %></pose>
+    </include>
+
+    <!-- (-X) (Width) (pi/2) -->
+    <include>
+      <uri>file://<%= wall_w_uri %></uri>
+      <name>wall_south</name>
+      <pose><%= -x_off %> 0 <%= z_pos %> 0 0 <%= pi_over_2 %></pose>
+    </include>
+
+  </world>
+</sdf>
