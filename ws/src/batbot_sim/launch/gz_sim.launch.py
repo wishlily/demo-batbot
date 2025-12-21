@@ -53,8 +53,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory("ros_gz_sim"), "launch", "gz_sim.launch.py")
         ),
-        # launch_arguments={"gz_args": ["-r ", LaunchConfiguration("world")]}.items(),
-        launch_arguments={"gz_args": [LaunchConfiguration("world")]}.items(),
+        launch_arguments={"gz_args": ["-r ", LaunchConfiguration("world")]}.items(),
     )
     spawn_entity = Node(
         package="ros_gz_sim",

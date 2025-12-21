@@ -3,9 +3,11 @@
   # default 20x20
   l = defined?(length) ? length.to_f : 20.0
   w = defined?(width)  ? width.to_f  : 20.0
+
+  model_name = "parametric_ground"
 %>
 <sdf version="1.8">
-  <model name="custom_ground">
+  <model name="<%= model_name %>">
     <static>true</static>
     <link name="link">
       <collision name="collision">
@@ -14,8 +16,18 @@
       <visual name="visual">
         <geometry><plane><normal>0 0 1</normal><size><%= l %> <%= w %></size></plane></geometry>
         <material>
-          <ambient>0.3 0.3 0.3 1</ambient>
-          <diffuse>0.3 0.3 0.3 1</diffuse>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+
+          <pbr>
+            <metal>
+              <albedo_map>model://<%= model_name %>/materials/textures/checkered_pavement_tiles_diff_2k.jpg</albedo_map>
+              <normal_map>model://<%= model_name %>/materials/textures/checkered_pavement_tiles_nor_gl_2k.jpg</normal_map>
+              <roughness_map>model://<%= model_name %>/materials/textures/checkered_pavement_tiles_rough_2k.jpg</roughness_map>
+              <metalness>0.0</metalness>
+            </metal>
+          </pbr>
         </material>
       </visual>
     </link>

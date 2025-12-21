@@ -4,6 +4,8 @@
   l = defined?(length) ? length.to_f : 1.0
   h = defined?(height) ? height.to_f : 1.0
   t = defined?(thickness) ? thickness.to_f : 0.2
+
+  model_name = "parametric_wall"
 %>
 <sdf version="1.8">
   <model name="wall_<%= l %>m">
@@ -15,8 +17,18 @@
       <visual name="visual">
         <geometry><box><size><%= l %> <%= t %> <%= h %></size></box></geometry>
         <material>
-          <ambient>0.8 0.5 0.2 1</ambient>
-          <diffuse>0.8 0.5 0.2 1</diffuse>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+
+          <pbr>
+            <metal>
+              <albedo_map>model://<%= model_name %>/materials/textures/cobblestone_pavement_diff_2k.jpg</albedo_map>
+              <normal_map>model://<%= model_name %>/materials/textures/cobblestone_pavement_nor_gl_2k.jpg</normal_map>
+              <roughness_map>model://<%= model_name %>/materials/textures/cobblestone_pavement_rough_2k.jpg</roughness_map>
+              <metalness>0.0</metalness>
+            </metal>
+          </pbr>
         </material>
       </visual>
     </link>
