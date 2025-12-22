@@ -15,4 +15,9 @@
   <xacro:wheel_xacro wheel_name="back_left" length="0.02" radius="0.0225" xyz="-0.05 0.0845 0" />
   <xacro:wheel_xacro wheel_name="back_right" length="0.02" radius="0.0225" xyz="-0.05 -0.0845 0" />
   <xacro:imu_xacro size="0.02 0.02 0.02" xyz="-0.06 -0.025 0.03" />
+
+  <!-- Include Gazebo plugins -->
+  <xacro:include
+    filename="$(find batbot_description)/urdf/batbot/plugins/gazebo_control_plugin.xacro" />
+  <xacro:gazebo_control_plugin />
 </robot>
