@@ -1,11 +1,12 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, SetEnvironmentVariable, IncludeLaunchDescription, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, RegisterEventHandler
 from launch.event_handlers import OnProcessExit
-from launch_ros.parameter_descriptions import ParameterValue
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import PathJoinSubstitution, LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from ament_index_python.packages import get_package_share_directory
+from launch_ros.substitutions import FindPackageShare
+from launch.conditions import IfCondition
 import os
 
 
@@ -33,20 +34,25 @@ def generate_launch_description():
         default_value=os.path.join(world_gen_dir, "", "world.sdf"),
         description="Path to world SDF file",
     )
-    # gazebo resource path
-    gz_resource_env = SetEnvironmentVariable(
-        name='GZ_SIM_RESOURCE_PATH',
-        value=[world_gen_dir, ':', os.path.join(world_pkg_share, 'models')]
-    )
     # robot description
-    model_arg = DeclareLaunchArgument(
-        "model",
-        default_value=os.path.join(get_package_share_directory("batbot_description"),
-                                   "urdf/batbot", "batbot.urdf.xacro"),
-        description="Path to robot description file (URDF or XACRO)",
+    robot_description_arg = DeclareLaunchArgument(
+        "robot",
+        default_value="batbot_description",
+        description="Robot description package name",
     )
-    robot_description = ParameterValue(
-        Command(["xacro ", LaunchConfiguration("model")]), value_type=str
+    robot_description_launch_arg = DeclareLaunchArgument(
+        'robot_description_launch',
+        default_value='true',
+        description='Launch robot description'
+    )
+    robot_description_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare(LaunchConfiguration('robot')),
+                'launch',
+                'description.launch.py'])
+        ]),
+        condition=IfCondition(LaunchConfiguration('robot_description_launch'))
     )
     # gazebo
     gazebo = IncludeLaunchDescription(
@@ -60,18 +66,12 @@ def generate_launch_description():
         executable="create",
         arguments=[
             "-topic", "/robot_description",
-            "-name", "batbot",
+            "-name", LaunchConfiguration('robot'),
             "-x", "0.0",
             "-y", "0.0",
-            "-z", "0.01"
+            "-z", "0.5"
         ],
         output="screen",
-    )
-    robot_state_publisher = Node(
-        package="robot_state_publisher",
-        executable="robot_state_publisher",
-        name="robot_state_publisher",
-        parameters=[{"robot_description": robot_description}],
     )
     bridge = Node(
         package='ros_gz_bridge',
@@ -96,11 +96,12 @@ def generate_launch_description():
         world_arg,
         length_arg,
         width_arg,
-        gz_resource_env,
         generate_world_cmd,
 
-        model_arg,
-        robot_state_publisher,
+        robot_description_arg,
+        robot_description_launch_arg,
+        robot_description_launch,
+
         spawn_entity,
         bridge,
 
