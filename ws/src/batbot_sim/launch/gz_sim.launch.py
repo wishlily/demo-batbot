@@ -11,7 +11,6 @@ import os
 
 
 def generate_launch_description():
-    world_name = "empty_room"
     # generate world sdf
     world_pkg_share = get_package_share_directory('batbot_sim')
     world_gen_dir = '/tmp/batbot_sim_generated'
@@ -77,9 +76,10 @@ def generate_launch_description():
         package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=[
+            '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
             '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
             '/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry',
-            f'/world/{world_name}/model/batbot/joint_state@sensor_msgs/msg/JointState[gz.msgs.Model',
+            '/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model',
             '/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V'
         ],
         output='screen'
