@@ -20,4 +20,7 @@
   <xacro:include
     filename="$(find batbot_description)/urdf/batbot/plugins/gazebo_control_plugin.xacro" />
   <xacro:gazebo_control_plugin />
+  <xacro:include
+    filename="$(find batbot_description)/urdf/batbot/plugins/gazebo_sensor_plugin.xacro" />
+  <xacro:gazebo_sensor_plugin />
 </robot>

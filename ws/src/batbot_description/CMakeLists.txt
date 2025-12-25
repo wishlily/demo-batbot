@@ -24,7 +24,7 @@ endif()
 install(DIRECTORY
   launch
   urdf
-  rviz
+  config
   DESTINATION share/${PROJECT_NAME}
 )
 

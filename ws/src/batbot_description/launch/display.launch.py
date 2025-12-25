@@ -29,7 +29,7 @@ def generate_launch_description():
         ]
     )
 
-    rviz_config_file = os.path.join(pkg_share, "rviz", "urdf.rviz")
+    rviz_config_file = os.path.join(pkg_share, "config/rviz", "urdf.rviz")
     rviz2 = Node(
         package="rviz2",
         executable="rviz2",
