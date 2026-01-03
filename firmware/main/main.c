@@ -17,6 +17,7 @@
 #include "esp_chip_info.h"
 #include "esp_flash.h"
 #include "esp_system.h"
+#include "esp_mac.h"
 #include "esp_log.h"
 
 #include "state.h"
@@ -59,6 +60,14 @@ void subscription_callback(const void* msgin)
     }
 }
 
+static uint32_t micro_ros_client_key(void)
+{
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    uint32_t client_key = (uint32_t)(mac[2] << 24 | mac[3] << 16 | mac[4] << 8 | mac[5]);
+    return client_key;
+}
+
 void micro_ros_task(void* arg)
 {
     rcl_allocator_t allocator = rcl_get_default_allocator();
@@ -84,8 +93,10 @@ void micro_ros_task(void* arg)
 
 #ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
         rmw_init_options_t* rmw_options = rcl_init_options_get_rmw_init_options(&init_options);
-        rmw_uros_options_set_udp_address(CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options);
-#endif
+        RCSOFTCHECK(rmw_uros_options_set_udp_address(
+            CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options));
+
+        RCSOFTCHECK(rmw_uros_options_set_client_key(micro_ros_client_key(), rmw_options));
 
         ESP_LOGI(TAG, "Connecting to agent...");
         while (rmw_uros_ping_agent_options(1000, 1, rmw_options) != RCL_RET_OK) {
@@ -96,6 +107,7 @@ void micro_ros_task(void* arg)
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
         ESP_LOGI(TAG, "Agent connected!");
+#endif
 
         node = rcl_get_zero_initialized_node();
         subscriber = rcl_get_zero_initialized_subscription();
