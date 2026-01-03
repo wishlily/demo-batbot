@@ -19,9 +19,13 @@
 #include "esp_system.h"
 #include "esp_log.h"
 
+#include "state.h"
+
 #ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
 #include <rmw_microros/rmw_microros.h>
 #endif
+
+static const char* TAG = "MAIN";
 
 #define RCCHECK(fn)                                                                      \
     {                                                                                    \
@@ -39,16 +43,19 @@
         }                                                                                  \
     }
 
-rcl_publisher_t publisher;
-std_msgs__msg__Int32 msg;
+std_msgs__msg__Int32 recv_msg;
 
-void timer_callback(rcl_timer_t* timer, int64_t last_call_time)
+void subscription_callback(const void* msgin)
 {
-    RCLC_UNUSED(last_call_time);
-    if (timer != NULL) {
-        printf("Publishing: %d\n", (int)msg.data);
-        RCSOFTCHECK(rcl_publish(&publisher, &msg, NULL));
-        msg.data++;
+    const std_msgs__msg__Int32* msg = (const std_msgs__msg__Int32*)msgin;
+    printf("Received: %d\n", (int)msg->data);
+    switch (msg->data) {
+    case APP_STATE_TEST:
+        app_state(APP_STATE_TEST);
+        break;
+    default:
+        app_state(msg->data);
+        break;
     }
 }
 
@@ -56,86 +63,99 @@ void micro_ros_task(void* arg)
 {
     rcl_allocator_t allocator = rcl_get_default_allocator();
     rclc_support_t support;
-
-    rcl_init_options_t init_options = rcl_get_zero_initialized_init_options();
-    RCCHECK(rcl_init_options_init(&init_options, allocator));
-
-    // change ros domain id
-    RCCHECK(rcl_init_options_set_domain_id(&init_options, CONFIG_MICRO_ROS_DOMAIN_ID));
-
-#ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
-    rmw_init_options_t* rmw_options = rcl_init_options_get_rmw_init_options(&init_options);
-
-    // Static Agent IP and port can be used instead of autodisvery.
-    RCCHECK(rmw_uros_options_set_udp_address(
-        CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options));
-    // RCCHECK(rmw_uros_discover_agent(rmw_options));
-#endif
-
-    // create init_options
-    RCCHECK(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
-
-    // create node
     rcl_node_t node;
-    RCCHECK(rclc_node_init_default(&node, "esp32_int32_publisher", CONFIG_MICRO_ROS_NAMESPACE, &support));
-
-    // create publisher
-    RCCHECK(rclc_publisher_init_default(
-        &publisher, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "freertos_int32_publisher"));
-
-    // create timer,
-    rcl_timer_t timer;
-    const unsigned int timer_timeout = 1000;
-    RCCHECK(rclc_timer_init_default2(&timer, &support, RCL_MS_TO_NS(timer_timeout), timer_callback, true));
-
-    // create executor
+    rcl_subscription_t subscriber;
     rclc_executor_t executor;
-    RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
-    RCCHECK(rclc_executor_add_timer(&executor, &timer));
-
-    msg.data = 0;
+    rcl_init_options_t init_options;
 
     while (1) {
-        rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
-        usleep(10000);
-    }
+        init_options = rcl_get_zero_initialized_init_options();
 
-    // free resources
-    RCCHECK(rcl_publisher_fini(&publisher, &node));
-    RCCHECK(rcl_node_fini(&node));
+        ESP_LOGD(TAG, "Initializing micro-ROS ...");
+        if (rcl_init_options_init(&init_options, allocator) != RCL_RET_OK) {
+            ESP_LOGE(TAG, "Failed to init init_options");
+            continue;
+        }
+        if (rcl_init_options_set_domain_id(&init_options, CONFIG_MICRO_ROS_DOMAIN_ID) != RCL_RET_OK) {
+            ESP_LOGE(TAG, "Failed to set Domain ID");
+            RCSOFTCHECK(rcl_init_options_fini(&init_options));
+            continue;
+        }
+
+#ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
+        rmw_init_options_t* rmw_options = rcl_init_options_get_rmw_init_options(&init_options);
+        rmw_uros_options_set_udp_address(CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options);
+#endif
+
+        ESP_LOGI(TAG, "Connecting to agent...");
+        while (rmw_uros_ping_agent_options(1000, 1, rmw_options) != RCL_RET_OK) {
+            ESP_LOGI(TAG,
+                     "Waiting for agent connection (%s:%s)...",
+                     CONFIG_MICRO_ROS_AGENT_IP,
+                     CONFIG_MICRO_ROS_AGENT_PORT);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+        ESP_LOGI(TAG, "Agent connected!");
+
+        node = rcl_get_zero_initialized_node();
+        subscriber = rcl_get_zero_initialized_subscription();
+        executor = rclc_executor_get_zero_initialized_executor();
+        memset(&support, 0, sizeof(rclc_support_t));
+
+        if (rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator) != RCL_RET_OK) {
+            ESP_LOGE(TAG, "Failed to init support, retrying...");
+            RCSOFTCHECK(rcl_init_options_fini(&init_options));
+            continue;
+        }
+
+        if (rclc_node_init_default(&node, "main", CONFIG_MICRO_ROS_NAMESPACE, &support) != RCL_RET_OK) {
+            ESP_LOGE(TAG, "Failed to init node");
+            goto cleanup;
+        }
+        if (rclc_subscription_init_default(
+                &subscriber, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "subscriber") !=
+            RCL_RET_OK) {
+            ESP_LOGE(TAG, "Failed to init subscriber");
+            goto cleanup;
+        }
+
+        if (rclc_executor_init(&executor, &support.context, 1, &allocator) != RCL_RET_OK) {
+            ESP_LOGE(TAG, "Failed to init executor");
+            goto cleanup;
+        }
+        if (rclc_executor_add_subscription(
+                &executor, &subscriber, &recv_msg, &subscription_callback, ON_NEW_DATA) != RCL_RET_OK) {
+            ESP_LOGE(TAG, "Failed to add subscription");
+            goto cleanup;
+        }
+
+        ESP_LOGI(TAG, "Micro-ROS task running!");
+        while (1) {
+            if (rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100)) != RCL_RET_OK) {
+                ESP_LOGI(TAG, "Connection lost/Error in spin. Resetting...");
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+    cleanup:
+        ESP_LOGI(TAG, "Cleaning up resources...\n");
+        RCSOFTCHECK(rclc_executor_fini(&executor));
+        RCSOFTCHECK(rcl_subscription_fini(&subscriber, &node));
+        RCSOFTCHECK(rcl_node_fini(&node));
+        RCSOFTCHECK(rclc_support_fini(&support));
+        RCSOFTCHECK(rcl_init_options_fini(&init_options));
+
+        ESP_LOGI(TAG, "Reconnecting in 1s...");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
 
     vTaskDelete(NULL);
 }
 
-void print_system_info(void)
-{
-    esp_chip_info_t chip_info;
-    uint32_t flash_size;
-    esp_chip_info(&chip_info);
-    printf("This is %s chip with %d CPU core(s), %s%s%s%s, ",
-           CONFIG_IDF_TARGET,
-           chip_info.cores,
-           (chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi/" : "",
-           (chip_info.features & CHIP_FEATURE_BT) ? "BT" : "",
-           (chip_info.features & CHIP_FEATURE_BLE) ? "BLE" : "",
-           (chip_info.features & CHIP_FEATURE_IEEE802154) ? ", 802.15.4 (Zigbee/Thread)" : "");
-    unsigned major_rev = chip_info.revision / 100;
-    unsigned minor_rev = chip_info.revision % 100;
-    printf("silicon revision v%d.%d, ", major_rev, minor_rev);
-    if (esp_flash_get_size(NULL, &flash_size) != ESP_OK) {
-        printf("Get flash size failed");
-        return;
-    }
-    printf("%" PRIu32 "MB %s flash\n",
-           flash_size / (uint32_t)(1024 * 1024),
-           (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
-
-    printf("Minimum free heap size: %" PRIu32 " bytes\n", esp_get_minimum_free_heap_size());
-}
-
 void app_main(void)
 {
-    print_system_info();
+    app_state_init();
+
 #if defined(CONFIG_MICRO_ROS_ESP_NETIF_WLAN) || defined(CONFIG_MICRO_ROS_ESP_NETIF_ENET)
     ESP_ERROR_CHECK(uros_network_interface_initialize());
 #endif
