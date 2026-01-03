@@ -6,7 +6,7 @@ extern "C" {
 #include <stdint.h>
 
 #define MORSE_UNIT_MS 200
-#define MORSE_IDLE_SW_DEF true
+#define MORSE_IDLE_SW_DEF false
 
 typedef enum {
     MORSE_IDLE,     // Idle

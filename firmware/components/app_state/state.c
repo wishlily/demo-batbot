@@ -26,10 +26,15 @@ static void state_task(void* arg)
     vTaskDelete(NULL);
 }
 
+inline static void state_led_set(bool state)
+{
+    led_set(LED_ORANGE, state);
+}
+
 void app_state_init()
 {
-    led_init();
-    morse_init(&morse_handle, led_set);
+    led_init(LED_ORANGE);
+    morse_init(&morse_handle, state_led_set);
 
     xTaskCreatePinnedToCore(state_task, "state_task", 2048, NULL, APP_STATE_PRIO, NULL, 0);
 }
