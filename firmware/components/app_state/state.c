@@ -6,6 +6,7 @@
 #include "esp_log.h"
 
 #include "led.h"
+#include "beep.h"
 #include "morse.h"
 
 static const char* TAG = "STAT";
@@ -20,6 +21,7 @@ static void state_task(void* arg)
     TickType_t last_time = xTaskGetTickCount();
     while (1) {
         morse_update(&morse_handle, APP_STATE_UNIT_MS);
+        beep_update(APP_STATE_UNIT_MS);
         vTaskDelayUntil(&last_time, period);
     }
 
@@ -34,6 +36,7 @@ inline static void state_led_set(bool state)
 void app_state_init()
 {
     led_init(LED_ORANGE);
+    beep_init();
     morse_init(&morse_handle, state_led_set);
 
     xTaskCreatePinnedToCore(state_task, "state_task", 2048, NULL, APP_STATE_PRIO, NULL, 0);

@@ -3,5 +3,5 @@ file(GLOB_RECURSE COMPONENT_SRC *.c)
 idf_component_register(
 	SRCS ${COMPONENT_SRC}
     INCLUDE_DIRS "."
-    PRIV_REQUIRES driver drv_led drv_beep lib_morse
+    REQUIRES driver
 )

@@ -21,6 +21,7 @@
 #include "esp_log.h"
 
 #include "state.h"
+#include "beep.h"
 
 #ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
 #include <rmw_microros/rmw_microros.h>
@@ -46,6 +47,7 @@ static const char* TAG = "MAIN";
 
 std_msgs__msg__Int32 recv_msg;
 
+// TODO:
 void subscription_callback(const void* msgin)
 {
     const std_msgs__msg__Int32* msg = (const std_msgs__msg__Int32*)msgin;
@@ -58,6 +60,7 @@ void subscription_callback(const void* msgin)
         app_state(msg->data);
         break;
     }
+    beep_on_time(msg->data);
 }
 
 static uint32_t micro_ros_client_key(void)
@@ -120,7 +123,7 @@ void micro_ros_task(void* arg)
             continue;
         }
 
-        if (rclc_node_init_default(&node, "main", CONFIG_MICRO_ROS_NAMESPACE, &support) != RCL_RET_OK) {
+        if (rclc_node_init_default(&node, "actuator", CONFIG_MICRO_ROS_NAMESPACE, &support) != RCL_RET_OK) {
             ESP_LOGE(TAG, "Failed to init node");
             goto cleanup;
         }
