@@ -22,6 +22,7 @@
 
 #include "state.h"
 #include "beep.h"
+#include "imu.h"
 
 #ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
 #include <rmw_microros/rmw_microros.h>
@@ -167,9 +168,32 @@ void micro_ros_task(void* arg)
     vTaskDelete(NULL);
 }
 
+static void imu_task(void* arg)
+{
+    ESP_LOGI(TAG, "IMU task started");
+    while (1) {
+        imu_data_t data;
+        if (imu_wait_for_data(&data)) {
+            ESP_LOGE(TAG, "imu_wait_for_data");
+        }
+        // static int count = 0;
+        // if (count++ % 50 == 0) {
+        //     ESP_LOGI(
+        //         TAG,
+        //         "%5llu us, Accel: % 8.2f % 8.2f % 8.2f m/s^2, Gyro: % 8.2f % 8.2f % 8.2f, Temp: % 4.2f
+        //         degC", data->timestamp, data->accel_x, data->accel_y, data->accel_z, data->gyro_x,
+        //         data->gyro_y,
+        //         data->gyro_z,
+        //         imu_get_temperature());
+        // }
+    }
+    vTaskDelete(NULL);
+}
+
 void app_main(void)
 {
     app_state_init();
+    ESP_ERROR_CHECK_WITHOUT_ABORT(imu_init());
 
 #if defined(CONFIG_MICRO_ROS_ESP_NETIF_WLAN) || defined(CONFIG_MICRO_ROS_ESP_NETIF_ENET)
     ESP_ERROR_CHECK(uros_network_interface_initialize());
@@ -178,4 +202,5 @@ void app_main(void)
     // pin micro-ros task in APP_CPU to make PRO_CPU to deal with wifi:
     xTaskCreate(
         micro_ros_task, "uros_task", CONFIG_MICRO_ROS_APP_STACK, NULL, CONFIG_MICRO_ROS_APP_TASK_PRIO, NULL);
+    xTaskCreate(imu_task, "imu_test_task", 4096, NULL, 10, NULL);
 }
