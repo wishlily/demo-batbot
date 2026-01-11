@@ -32,7 +32,7 @@ typedef struct {
 
 int imu_init(void);
 float imu_get_temperature(void);
-int imu_wait_for_data(imu_data_t* data);
+int imu_wait_for_data(imu_data_t* data, int32_t ticks_to_wait);
 
 #ifdef __cplusplus
 }

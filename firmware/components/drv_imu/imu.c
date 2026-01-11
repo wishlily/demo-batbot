@@ -97,8 +97,8 @@ static int setup_imu(void)
     IMU_ERROR_CHECK(inv_imu_set_gyro_fsr(&imu_dev, IMU_GYRO_FSR_REG));
 
     /* Configure ODR */
-    IMU_ERROR_CHECK(inv_imu_set_accel_frequency(&imu_dev, ACCEL_CONFIG0_ODR_100_HZ));
-    IMU_ERROR_CHECK(inv_imu_set_gyro_frequency(&imu_dev, GYRO_CONFIG0_ODR_100_HZ));
+    IMU_ERROR_CHECK(inv_imu_set_accel_frequency(&imu_dev, ACCEL_CONFIG0_ODR_50_HZ));
+    IMU_ERROR_CHECK(inv_imu_set_gyro_frequency(&imu_dev, GYRO_CONFIG0_ODR_50_HZ));
 
     /* Variable configuration */
     IMU_ERROR_CHECK(configure_fifo());
@@ -253,10 +253,10 @@ float imu_get_temperature(void)
 #define ADC_SCALE_16BIT 32768.0f
 #define DEG_TO_RAD (M_PI / 180.0f)
 
-int imu_wait_for_data(imu_data_t* data)
+int imu_wait_for_data(imu_data_t* data, int32_t ticks_to_wait)
 {
     imu_raw_t rx_data;
-    if (xQueueReceive(imu_raw_queue, &rx_data, portMAX_DELAY) == pdTRUE) {
+    if (xQueueReceive(imu_raw_queue, &rx_data, ticks_to_wait) == pdTRUE) {
         float accel_scale = (float)IMU_ACCEL_FSR_G * GRAVITY_MSS / ADC_SCALE_16BIT;
         float gyro_scale = (float)IMU_GYRO_FSR_DPS * DEG_TO_RAD / ADC_SCALE_16BIT;
 

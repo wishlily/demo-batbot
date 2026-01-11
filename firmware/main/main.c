@@ -3,10 +3,12 @@
 #include <unistd.h>
 #include <string.h>
 
+#include <rosidl_runtime_c/string_functions.h>
 #include <uros_network_interfaces.h>
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
 #include <std_msgs/msg/int32.h>
+#include <sensor_msgs/msg/imu.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 
@@ -17,6 +19,7 @@
 #include "esp_chip_info.h"
 #include "esp_flash.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "esp_mac.h"
 #include "esp_log.h"
 
@@ -46,10 +49,23 @@ static const char* TAG = "MAIN";
         }                                                                                  \
     }
 
-std_msgs__msg__Int32 recv_msg;
+static uint64_t time_offset_us = 0; // us
+
+static void sync_time(void)
+{
+    const int timeout_ms = 1000;
+    if (rmw_uros_sync_session(timeout_ms) == RCL_RET_OK) {
+        uint64_t now = esp_timer_get_time();
+        uint64_t ros_time_us = rmw_uros_epoch_nanos() / 1000ULL;
+        time_offset_us = ros_time_us - now;
+        ESP_LOGI(TAG, "Time synced. Offset: %llu us", time_offset_us);
+    } else {
+        ESP_LOGW(TAG, "Time sync failed");
+    }
+}
 
 // TODO:
-void subscription_callback(const void* msgin)
+void subscription_callback_test(const void* msgin)
 {
     const std_msgs__msg__Int32* msg = (const std_msgs__msg__Int32*)msgin;
     printf("Received: %d\n", (int)msg->data);
@@ -62,6 +78,47 @@ void subscription_callback(const void* msgin)
         break;
     }
     beep_on_time(msg->data);
+}
+
+static void msg_imu_init(sensor_msgs__msg__Imu* msg)
+{
+    sensor_msgs__msg__Imu__init(msg);
+    rosidl_runtime_c__String__assign(&msg->header.frame_id, "imu_link");
+}
+
+int check_publisher_imu(rcl_publisher_t* pub, sensor_msgs__msg__Imu* msg)
+{
+    imu_data_t data;
+    int count = 0;
+    while (count < 5 && imu_wait_for_data(&data, 0) == 0) {
+        // static int count = 0;
+        // if (count++ % 50 == 0) {
+        //     ESP_LOGI(
+        //         TAG,
+        //         "%5llu us, Accel: % 8.2f % 8.2f % 8.2f m/s^2, Gyro: % 8.2f % 8.2f % 8.2f, Temp: % 4.2f
+        //         degC", data->timestamp, data->accel_x, data->accel_y, data->accel_z, data->gyro_x,
+        //         data->gyro_y,
+        //         data->gyro_z,
+        //         imu_get_temperature());
+        // }
+        count++;
+
+        msg->linear_acceleration.x = data.accel_x;
+        msg->linear_acceleration.y = data.accel_y;
+        msg->linear_acceleration.z = data.accel_z;
+        msg->angular_velocity.x = data.gyro_x;
+        msg->angular_velocity.y = data.gyro_y;
+        msg->angular_velocity.z = data.gyro_z;
+
+        uint64_t now_us = data.timestamp + time_offset_us;
+        msg->header.stamp.sec = now_us / 1000000;
+        msg->header.stamp.nanosec = (now_us % 1000000) * 1000;
+
+        if (rcl_publish(pub, msg, NULL)) {
+            return RCL_RET_ERROR;
+        }
+    }
+    return RCL_RET_OK;
 }
 
 static uint32_t micro_ros_client_key(void)
@@ -77,9 +134,14 @@ void micro_ros_task(void* arg)
     rcl_allocator_t allocator = rcl_get_default_allocator();
     rclc_support_t support;
     rcl_node_t node;
-    rcl_subscription_t subscriber;
     rclc_executor_t executor;
     rcl_init_options_t init_options;
+
+    rcl_subscription_t subscriber_test;
+    std_msgs__msg__Int32 msg_test;
+
+    rcl_publisher_t publisher_imu;
+    sensor_msgs__msg__Imu msg_imu;
 
     while (1) {
         init_options = rcl_get_zero_initialized_init_options();
@@ -114,7 +176,8 @@ void micro_ros_task(void* arg)
 #endif
 
         node = rcl_get_zero_initialized_node();
-        subscriber = rcl_get_zero_initialized_subscription();
+        subscriber_test = rcl_get_zero_initialized_subscription();
+        publisher_imu = rcl_get_zero_initialized_publisher();
         executor = rclc_executor_get_zero_initialized_executor();
         memset(&support, 0, sizeof(rclc_support_t));
 
@@ -128,10 +191,19 @@ void micro_ros_task(void* arg)
             ESP_LOGE(TAG, "Failed to init node");
             goto cleanup;
         }
+
         if (rclc_subscription_init_default(
-                &subscriber, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "subscriber") !=
+                &subscriber_test, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "test") !=
             RCL_RET_OK) {
             ESP_LOGE(TAG, "Failed to init subscriber");
+            goto cleanup;
+        }
+
+        msg_imu_init(&msg_imu);
+        if (rclc_publisher_init_default(
+                &publisher_imu, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu), "imu") !=
+            RCL_RET_OK) {
+            ESP_LOGE(TAG, "Failed to init publisher");
             goto cleanup;
         }
 
@@ -140,23 +212,29 @@ void micro_ros_task(void* arg)
             goto cleanup;
         }
         if (rclc_executor_add_subscription(
-                &executor, &subscriber, &recv_msg, &subscription_callback, ON_NEW_DATA) != RCL_RET_OK) {
+                &executor, &subscriber_test, &msg_test, &subscription_callback_test, ON_NEW_DATA) !=
+            RCL_RET_OK) {
             ESP_LOGE(TAG, "Failed to add subscription");
             goto cleanup;
         }
 
+        sync_time();
+
         ESP_LOGI(TAG, "Micro-ROS task running!");
         while (1) {
-            if (rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100)) != RCL_RET_OK) {
+            if (rclc_executor_spin_some(&executor, RCL_MS_TO_NS(5)) != RCL_RET_OK) {
                 ESP_LOGI(TAG, "Connection lost/Error in spin. Resetting...");
                 break;
             }
-            vTaskDelay(pdMS_TO_TICKS(10));
+            RCSOFTCHECK(check_publisher_imu(&publisher_imu, &msg_imu));
+            vTaskDelay(pdMS_TO_TICKS(1));
         }
     cleanup:
         ESP_LOGI(TAG, "Cleaning up resources...\n");
+        sensor_msgs__msg__Imu__fini(&msg_imu);
         RCSOFTCHECK(rclc_executor_fini(&executor));
-        RCSOFTCHECK(rcl_subscription_fini(&subscriber, &node));
+        RCSOFTCHECK(rcl_subscription_fini(&subscriber_test, &node));
+        RCSOFTCHECK(rcl_publisher_fini(&publisher_imu, &node));
         RCSOFTCHECK(rcl_node_fini(&node));
         RCSOFTCHECK(rclc_support_fini(&support));
         RCSOFTCHECK(rcl_init_options_fini(&init_options));
@@ -165,28 +243,6 @@ void micro_ros_task(void* arg)
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
-    vTaskDelete(NULL);
-}
-
-static void imu_task(void* arg)
-{
-    ESP_LOGI(TAG, "IMU task started");
-    while (1) {
-        imu_data_t data;
-        if (imu_wait_for_data(&data)) {
-            ESP_LOGE(TAG, "imu_wait_for_data");
-        }
-        // static int count = 0;
-        // if (count++ % 50 == 0) {
-        //     ESP_LOGI(
-        //         TAG,
-        //         "%5llu us, Accel: % 8.2f % 8.2f % 8.2f m/s^2, Gyro: % 8.2f % 8.2f % 8.2f, Temp: % 4.2f
-        //         degC", data->timestamp, data->accel_x, data->accel_y, data->accel_z, data->gyro_x,
-        //         data->gyro_y,
-        //         data->gyro_z,
-        //         imu_get_temperature());
-        // }
-    }
     vTaskDelete(NULL);
 }
 
@@ -202,5 +258,4 @@ void app_main(void)
     // pin micro-ros task in APP_CPU to make PRO_CPU to deal with wifi:
     xTaskCreate(
         micro_ros_task, "uros_task", CONFIG_MICRO_ROS_APP_STACK, NULL, CONFIG_MICRO_ROS_APP_TASK_PRIO, NULL);
-    xTaskCreate(imu_task, "imu_test_task", 4096, NULL, 10, NULL);
 }
