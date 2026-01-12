@@ -16,6 +16,22 @@
 
 #include "system_interface.h"
 
+#define LOG_THROTTLE(tag, level, interval_ms, format, ...)                                 \
+    do {                                                                                   \
+        static int64_t last_log_time = 0;                                                  \
+        static uint32_t occur_count = 0;                                                   \
+        occur_count++;                                                                     \
+        int64_t now = esp_timer_get_time() / 1000;                                         \
+        if (now - last_log_time > interval_ms) {                                           \
+            ESP_LOG_LEVEL(level, tag, format " [Count: %lu]", ##__VA_ARGS__, occur_count); \
+            last_log_time = now;                                                           \
+            occur_count = 0;                                                               \
+        }                                                                                  \
+    } while (0)
+
+#define LOGW_THROTTLE(tag, interval_ms, format, ...) \
+    LOG_THROTTLE(tag, ESP_LOG_WARN, interval_ms, format, ##__VA_ARGS__)
+
 #define IMU_ERROR_CHECK(x)                         \
     ({                                             \
         int rc = ESP_ERROR_CHECK_WITHOUT_ABORT(x); \
@@ -169,7 +185,7 @@ static void sensor_event_cb(inv_imu_sensor_event_t* event)
 
     BaseType_t ret = xQueueSend(imu_raw_queue, &raw, 0);
     if (ret != pdTRUE) {
-        ESP_LOGW(IMU_LOG_TAG, "Queue full, packet dropped");
+        LOGW_THROTTLE(IMU_LOG_TAG, 1000, "Queue full, packet dropped.");
     }
     atomic_store(&imu_temperature_raw, event->temperature);
 }
@@ -253,6 +269,8 @@ float imu_get_temperature(void)
 #define ADC_SCALE_16BIT 32768.0f
 #define DEG_TO_RAD (M_PI / 180.0f)
 
+// return 0 on success
+// return INV_ERROR_TIMEOUT if timeout
 int imu_wait_for_data(imu_data_t* data, int32_t ticks_to_wait)
 {
     imu_raw_t rx_data;
