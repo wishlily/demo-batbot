@@ -27,6 +27,8 @@
 #include "beep.h"
 #include "imu.h"
 
+#include "lidar_ms200.h"
+
 #ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
 #include <rmw_microros/rmw_microros.h>
 #endif
@@ -283,7 +285,8 @@ void app_main(void)
     data_init();
 
     app_state_init();
-    ESP_ERROR_CHECK_WITHOUT_ABORT(imu_init());
+    // ESP_ERROR_CHECK_WITHOUT_ABORT(imu_init());
+    ESP_ERROR_CHECK_WITHOUT_ABORT(lidar_ms200_init());
 
 #if defined(CONFIG_MICRO_ROS_ESP_NETIF_WLAN) || defined(CONFIG_MICRO_ROS_ESP_NETIF_ENET)
     ESP_ERROR_CHECK(uros_network_interface_initialize());
@@ -292,4 +295,15 @@ void app_main(void)
     // pin micro-ros task in APP_CPU to make PRO_CPU to deal with wifi:
     xTaskCreate(
         micro_ros_task, "uros_task", CONFIG_MICRO_ROS_APP_STACK, NULL, CONFIG_MICRO_ROS_APP_TASK_PRIO, NULL);
+
+    while (1) {
+        ms200_frame_t frame;
+        if (lidar_ms200_read(&frame, portMAX_DELAY) == ESP_OK) {
+            ESP_LOGI(TAG,
+                     "%5llu us Got [%d mm][%d] end",
+                     frame.timestamp,
+                     frame.points[MS200_POINT_MAX - 1].distance,
+                     frame.points[MS200_POINT_MAX - 1].intensity);
+        }
+    }
 }
