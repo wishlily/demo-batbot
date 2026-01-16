@@ -2,13 +2,16 @@
 #include <inttypes.h>
 #include <unistd.h>
 #include <string.h>
+#include <math.h>
 
 #include <rosidl_runtime_c/string_functions.h>
+#include <rosidl_runtime_c/primitives_sequence_functions.h>
 #include <uros_network_interfaces.h>
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
 #include <std_msgs/msg/int32.h>
 #include <sensor_msgs/msg/imu.h>
+#include <sensor_msgs/msg/laser_scan.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 
@@ -52,15 +55,16 @@ static const char* TAG = "MAIN";
     }
 
 static uint64_t time_offset_us = 0; // us
+static uint64_t last_sync_time = 0; // us
 static volatile uint16_t pub_bad_count = 0;
 
-static void sync_time(void)
+static void sync_time(const int timeout_ms)
 {
-    const int timeout_ms = 1000;
     if (rmw_uros_sync_session(timeout_ms) == RCL_RET_OK) {
         uint64_t now = esp_timer_get_time();
         uint64_t ros_time_us = rmw_uros_epoch_nanos() / 1000ULL;
         time_offset_us = ros_time_us - now;
+        last_sync_time = now;
         ESP_LOGI(TAG, "Time synced. Offset: %llu us", time_offset_us);
     } else {
         ESP_LOGW(TAG, "Time sync failed");
@@ -89,7 +93,7 @@ static rcl_publisher_t imu_publisher;
 static void imu_data_init(void)
 {
     sensor_msgs__msg__Imu__init(&imu_msg);
-    rosidl_runtime_c__String__assign(&imu_msg.header.frame_id, "imu_link");
+    rosidl_runtime_c__String__assign(&imu_msg.header.frame_id, "imu_frame");
 
     imu_publisher = rcl_get_zero_initialized_publisher();
 }
@@ -139,9 +143,75 @@ void imu_timer_publisher(rcl_timer_t* timer, int64_t last_call_time)
     }
 }
 
+static sensor_msgs__msg__LaserScan lidar_msg;
+static rcl_publisher_t lidar_publisher;
+
+static void lidar_data_init(void)
+{
+    sensor_msgs__msg__LaserScan__init(&lidar_msg);
+    rosidl_runtime_c__String__assign(&lidar_msg.header.frame_id, "laser_frame");
+    lidar_msg.angle_min = -180 * M_PI / 180.0;
+    lidar_msg.angle_max = 180 * M_PI / 180.0;
+
+    lidar_msg.angle_increment = 1 * M_PI / 180.0;
+    lidar_msg.range_min = 0.12;
+    lidar_msg.range_max = 8.0;
+
+    bool success = rosidl_runtime_c__float__Sequence__init(&lidar_msg.ranges, MS200_POINT_MAX);
+    if (!success) {
+        ESP_LOGE(TAG, "Failed to allocate memory for ranges");
+        return;
+    }
+    success = rosidl_runtime_c__float__Sequence__init(&lidar_msg.intensities, MS200_POINT_MAX);
+    if (!success) {
+        ESP_LOGE(TAG, "Failed to allocate memory for intensities");
+        return;
+    }
+    for (int i = 0; i < MS200_POINT_MAX; i++) {
+        lidar_msg.intensities.data[i] = 0;
+        lidar_msg.ranges.data[i] = 0;
+    }
+
+    lidar_publisher = rcl_get_zero_initialized_publisher();
+}
+
+void lidar_timer_publisher(rcl_timer_t* timer, int64_t last_call_time)
+{
+    ms200_frame_t frame;
+    for (int i = 0; i < 3; i++) { // try 3 times
+        int rc = lidar_ms200_read(&frame, 0);
+        if (rc != ESP_OK) {
+            break;
+        }
+        ESP_LOGI(TAG,
+                 "%5llu us Got [%d mm][%d] end",
+                 frame.timestamp,
+                 frame.points[0].distance,
+                 frame.points[0].intensity);
+        for (int i = 0; i < MS200_POINT_MAX; i++) {
+            int raw_index = (i + 180) % MS200_POINT_MAX;
+            lidar_msg.ranges.data[i] = frame.points[raw_index].distance / 1000.0; // mm to m
+            lidar_msg.intensities.data[i] = frame.points[raw_index].intensity;
+        }
+
+        uint64_t now_us = frame.timestamp + time_offset_us;
+        lidar_msg.header.stamp.sec = now_us / 1000000;
+        lidar_msg.header.stamp.nanosec = (now_us % 1000000) * 1000;
+
+        rc = rcl_publish(&lidar_publisher, &lidar_msg, NULL);
+        if (rc != RCL_RET_OK) {
+            pub_bad_count++;
+            ESP_LOGE(TAG, "Failed to publish Laser message: %d", pub_bad_count);
+        } else {
+            pub_bad_count = 0;
+        }
+    }
+}
+
 static void data_init(void)
 {
     imu_data_init();
+    lidar_data_init();
 }
 
 
@@ -174,6 +244,7 @@ void micro_ros_task(void* arg)
     std_msgs__msg__Int32 msg_test;
 
     rcl_timer_t timer_imu;
+    rcl_timer_t timer_lidar;
 
     while (1) {
         init_options = rcl_get_zero_initialized_init_options();
@@ -212,6 +283,7 @@ void micro_ros_task(void* arg)
         subscriber_test = rcl_get_zero_initialized_subscription();
         executor = rclc_executor_get_zero_initialized_executor();
         timer_imu = rcl_get_zero_initialized_timer();
+        timer_lidar = rcl_get_zero_initialized_timer();
         memset(&support, 0, sizeof(rclc_support_t));
 
         if (rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator) != RCL_RET_OK) {
@@ -237,8 +309,18 @@ void micro_ros_task(void* arg)
                 cleanup,
                 "Failed to init imu timer");
 
+        RC_GOTO(
+            rclc_publisher_init_default(
+                &lidar_publisher, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan), "scan"),
+            cleanup,
+            "Failed to init laser publisher");
+        RC_GOTO(
+            rclc_timer_init_default2(&timer_lidar, &support, RCL_MS_TO_NS(100), lidar_timer_publisher, true),
+            cleanup,
+            "Failed to init laser timer");
+
         // 1 Subscription + 1 Timer
-        RC_GOTO(rclc_executor_init(&executor, &support.context, 2, &allocator),
+        RC_GOTO(rclc_executor_init(&executor, &support.context, 3, &allocator),
                 cleanup,
                 "Failed to init executor");
         RC_GOTO(rclc_executor_add_subscription(
@@ -246,17 +328,26 @@ void micro_ros_task(void* arg)
                 cleanup,
                 "Failed to add test subscriber");
         RC_GOTO(rclc_executor_add_timer(&executor, &timer_imu), cleanup, "Failed to add imu timer");
+        RC_GOTO(rclc_executor_add_timer(&executor, &timer_lidar), cleanup, "Failed to add lidar timer");
 
-        sync_time();
+        sync_time(1000);
 
         ESP_LOGI(TAG, "Micro-ROS task running!");
         pub_bad_count = 0;
         while (1) {
-            if (rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100)) != RCL_RET_OK) {
+            if (rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)) != RCL_RET_OK) {
                 ESP_LOGI(TAG, "Connection lost/Error in spin. Resetting...");
                 break;
             }
-            if (pub_bad_count > 5) {
+            if ((esp_timer_get_time() - last_sync_time) > 300000000LL) { // 5 minutes
+                rmw_uros_sync_session(100);
+                last_sync_time = esp_timer_get_time();
+            }
+            if (rmw_uros_ping_agent(100, 1) != RCL_RET_OK) {
+                ESP_LOGW(TAG, "Agent ping failed, resetting...");
+                break;
+            }
+            if (pub_bad_count > 10) {
                 ESP_LOGW(TAG, "Failed to publish IMU message %d times", pub_bad_count);
                 pub_bad_count = 0;
                 break;
@@ -269,6 +360,7 @@ void micro_ros_task(void* arg)
         RCSOFTCHECK(rcl_subscription_fini(&subscriber_test, &node));
         RCSOFTCHECK(rcl_publisher_fini(&imu_publisher, &node));
         RCSOFTCHECK(rcl_timer_fini(&timer_imu));
+        RCSOFTCHECK(rcl_timer_fini(&timer_lidar));
         RCSOFTCHECK(rcl_node_fini(&node));
         RCSOFTCHECK(rclc_support_fini(&support));
         RCSOFTCHECK(rcl_init_options_fini(&init_options));
@@ -285,7 +377,7 @@ void app_main(void)
     data_init();
 
     app_state_init();
-    // ESP_ERROR_CHECK_WITHOUT_ABORT(imu_init());
+    ESP_ERROR_CHECK_WITHOUT_ABORT(imu_init());
     ESP_ERROR_CHECK_WITHOUT_ABORT(lidar_ms200_init());
 
 #if defined(CONFIG_MICRO_ROS_ESP_NETIF_WLAN) || defined(CONFIG_MICRO_ROS_ESP_NETIF_ENET)
@@ -295,15 +387,4 @@ void app_main(void)
     // pin micro-ros task in APP_CPU to make PRO_CPU to deal with wifi:
     xTaskCreate(
         micro_ros_task, "uros_task", CONFIG_MICRO_ROS_APP_STACK, NULL, CONFIG_MICRO_ROS_APP_TASK_PRIO, NULL);
-
-    while (1) {
-        ms200_frame_t frame;
-        if (lidar_ms200_read(&frame, portMAX_DELAY) == ESP_OK) {
-            ESP_LOGI(TAG,
-                     "%5llu us Got [%d mm][%d] end",
-                     frame.timestamp,
-                     frame.points[MS200_POINT_MAX - 1].distance,
-                     frame.points[MS200_POINT_MAX - 1].intensity);
-        }
-    }
 }

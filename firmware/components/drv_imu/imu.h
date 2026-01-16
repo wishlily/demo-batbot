@@ -26,7 +26,7 @@ typedef struct {
     float gyro_x;
     float gyro_y;
     float gyro_z;
-    uint64_t timestamp;
+    uint64_t timestamp; // us
 } imu_data_t;
 
 
