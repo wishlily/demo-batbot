@@ -25,7 +25,10 @@
 #include "esp_timer.h"
 #include "esp_mac.h"
 #include "esp_log.h"
+#include "pwm_motor.h"
 
+#include "motion.h"
+#include "motor.h"
 #include "state.h"
 #include "beep.h"
 #include "imu.h"
@@ -377,14 +380,33 @@ void app_main(void)
     data_init();
 
     app_state_init();
-    ESP_ERROR_CHECK_WITHOUT_ABORT(imu_init());
-    ESP_ERROR_CHECK_WITHOUT_ABORT(lidar_ms200_init());
+    // ESP_ERROR_CHECK_WITHOUT_ABORT(imu_init());
+    // ESP_ERROR_CHECK_WITHOUT_ABORT(lidar_ms200_init());
+    ESP_ERROR_CHECK_WITHOUT_ABORT(motion_init());
 
 #if defined(CONFIG_MICRO_ROS_ESP_NETIF_WLAN) || defined(CONFIG_MICRO_ROS_ESP_NETIF_ENET)
     ESP_ERROR_CHECK(uros_network_interface_initialize());
 #endif
 
+    // Run calibration instead of normal logic
+    // Uncomment the next line to run calibration
+    // motor_calibration();
+
     // pin micro-ros task in APP_CPU to make PRO_CPU to deal with wifi:
-    xTaskCreate(
-        micro_ros_task, "uros_task", CONFIG_MICRO_ROS_APP_STACK, NULL, CONFIG_MICRO_ROS_APP_TASK_PRIO, NULL);
+    // xTaskCreate(
+    //     micro_ros_task, "uros_task", CONFIG_MICRO_ROS_APP_STACK, NULL, CONFIG_MICRO_ROS_APP_TASK_PRIO,
+    //     NULL);
+
+    motion_cmd_t cmd = {0.1, 0, 0.5};
+    ESP_ERROR_CHECK_WITHOUT_ABORT(motion_ctrl(&cmd));
+    ESP_LOGI(TAG, "Motion task running!");
+
+    for (int i = 0; i < 30; i++) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        motion_get_speed(&cmd);
+        ESP_LOGI(TAG, "Motion task running %d, spd:%.2f, err_cnt:%d", i, cmd.Vx, motor_get_error_count());
+    }
+
+    ESP_ERROR_CHECK_WITHOUT_ABORT(motion_stop(true));
+    ESP_LOGI(TAG, "Motion task stopped!");
 }
