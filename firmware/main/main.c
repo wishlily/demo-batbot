@@ -1,61 +1,72 @@
-#include <stdio.h>
+// ============================================================================
+// Standard C Library Headers
+// ============================================================================
 #include <inttypes.h>
-#include <unistd.h>
-#include <string.h>
 #include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
-#include <rosidl_runtime_c/string_functions.h>
-#include <rosidl_runtime_c/primitives_sequence_functions.h>
-#include <uros_network_interfaces.h>
-#include <rcl/rcl.h>
+// ============================================================================
+// ROS / micro-ROS Headers
+// ============================================================================
 #include <rcl/error_handling.h>
-#include <std_msgs/msg/int32.h>
+#include <rcl/rcl.h>
+#include <rclc/executor.h>
+#include <rclc/rclc.h>
+#include <geometry_msgs/msg/twist.h>
+#include <rosidl_runtime_c/primitives_sequence_functions.h>
+#include <rosidl_runtime_c/string_functions.h>
 #include <sensor_msgs/msg/imu.h>
 #include <sensor_msgs/msg/laser_scan.h>
-#include <rclc/rclc.h>
-#include <rclc/executor.h>
-
-#include "sdkconfig.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
-#include "esp_chip_info.h"
-#include "esp_flash.h"
-#include "esp_system.h"
-#include "esp_timer.h"
-#include "esp_mac.h"
-#include "esp_log.h"
-#include "pwm_motor.h"
-
-#include "motion.h"
-#include "motor.h"
-#include "state.h"
-#include "beep.h"
-#include "imu.h"
-
-#include "lidar_ms200.h"
+#include <std_msgs/msg/int32.h>
+#include <uros_network_interfaces.h>
 
 #ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
 #include <rmw_microros/rmw_microros.h>
 #endif
 
+// ============================================================================
+// ESP-IDF Headers
+// ============================================================================
+#include "esp_chip_info.h"
+#include "esp_flash.h"
+#include "esp_log.h"
+#include "esp_mac.h"
+#include "esp_system.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "sdkconfig.h"
+
+// ============================================================================
+// Project Specific Headers
+// ============================================================================
+#include "beep.h"
+#include "imu.h"
+#include "lidar_ms200.h"
+#include "motor.h"
+#include "motion.h"
+#include "pwm_motor.h"
+#include "state.h"
+
 static const char* TAG = "MAIN";
 
-#define RCCHECK(fn)                                                                      \
-    {                                                                                    \
-        rcl_ret_t temp_rc = fn;                                                          \
-        if ((temp_rc != RCL_RET_OK)) {                                                   \
-            printf("Failed status on line %d: %d. Aborting.\n", __LINE__, (int)temp_rc); \
-            vTaskDelete(NULL);                                                           \
-        }                                                                                \
-    }
-#define RCSOFTCHECK(fn)                                                                    \
-    {                                                                                      \
-        rcl_ret_t temp_rc = fn;                                                            \
-        if ((temp_rc != RCL_RET_OK)) {                                                     \
-            printf("Failed status on line %d: %d. Continuing.\n", __LINE__, (int)temp_rc); \
-        }                                                                                  \
-    }
+#define RCCHECK(fn)                                                                             \
+    do {                                                                                        \
+        rcl_ret_t temp_rc = fn;                                                                 \
+        if ((temp_rc != RCL_RET_OK)) {                                                          \
+            ESP_LOGE(TAG, "Failed status on line %d: %d. Aborting.\n", __LINE__, (int)temp_rc); \
+            vTaskDelete(NULL);                                                                  \
+        }                                                                                       \
+    } while (0)
+#define RCSOFTCHECK(fn)                                                                           \
+    do {                                                                                          \
+        rcl_ret_t temp_rc = fn;                                                                   \
+        if ((temp_rc != RCL_RET_OK)) {                                                            \
+            ESP_LOGE(TAG, "Failed status on line %d: %d. Continuing.\n", __LINE__, (int)temp_rc); \
+        }                                                                                         \
+    } while (0)
 
 static uint64_t time_offset_us = 0; // us
 static uint64_t last_sync_time = 0; // us
@@ -78,7 +89,7 @@ static void sync_time(const int timeout_ms)
 void subscription_callback_test(const void* msgin)
 {
     const std_msgs__msg__Int32* msg = (const std_msgs__msg__Int32*)msgin;
-    printf("Received: %d\n", (int)msg->data);
+    ESP_LOGI(TAG, "Received: %d\n", (int)msg->data);
     switch (msg->data) {
     case APP_STATE_TEST:
         app_state(APP_STATE_TEST);
@@ -90,9 +101,24 @@ void subscription_callback_test(const void* msgin)
     beep_on_time(msg->data);
 }
 
+void subscription_callback_twist(const void* msgin)
+{
+    const geometry_msgs__msg__Twist* msg = (const geometry_msgs__msg__Twist*)msgin;
+    ESP_LOGI(TAG, "cmd_vel:%.2f, %.2f, %.2f", msg->linear.x, msg->linear.y, msg->angular.z);
+    motion_cmd_t cmd = {
+        .Vx = msg->linear.x,
+        .Vy = msg->linear.y,
+        .Wz = msg->angular.z,
+    };
+    if (motion_ctrl(&cmd) != ESP_OK) {
+        ESP_LOGE(TAG, "Motion ctrl failed");
+    }
+}
+
 static sensor_msgs__msg__Imu imu_msg;
 static rcl_publisher_t imu_publisher;
 
+// only init use
 static void imu_data_init(void)
 {
     sensor_msgs__msg__Imu__init(&imu_msg);
@@ -100,12 +126,6 @@ static void imu_data_init(void)
 
     imu_publisher = rcl_get_zero_initialized_publisher();
 }
-
-// not use
-// static void imu_data_fini(void)
-// {
-//     sensor_msgs__msg__Imu__fini(&imu_msg);
-// }
 
 void imu_timer_publisher(rcl_timer_t* timer, int64_t last_call_time)
 {
@@ -149,7 +169,8 @@ void imu_timer_publisher(rcl_timer_t* timer, int64_t last_call_time)
 static sensor_msgs__msg__LaserScan lidar_msg;
 static rcl_publisher_t lidar_publisher;
 
-static void lidar_data_init(void)
+// only init use
+static esp_err_t lidar_data_init(void)
 {
     sensor_msgs__msg__LaserScan__init(&lidar_msg);
     rosidl_runtime_c__String__assign(&lidar_msg.header.frame_id, "laser_frame");
@@ -163,12 +184,12 @@ static void lidar_data_init(void)
     bool success = rosidl_runtime_c__float__Sequence__init(&lidar_msg.ranges, MS200_POINT_MAX);
     if (!success) {
         ESP_LOGE(TAG, "Failed to allocate memory for ranges");
-        return;
+        return ESP_ERR_NO_MEM;
     }
     success = rosidl_runtime_c__float__Sequence__init(&lidar_msg.intensities, MS200_POINT_MAX);
     if (!success) {
         ESP_LOGE(TAG, "Failed to allocate memory for intensities");
-        return;
+        return ESP_ERR_NO_MEM;
     }
     for (int i = 0; i < MS200_POINT_MAX; i++) {
         lidar_msg.intensities.data[i] = 0;
@@ -176,12 +197,13 @@ static void lidar_data_init(void)
     }
 
     lidar_publisher = rcl_get_zero_initialized_publisher();
+    return ESP_OK;
 }
 
 void lidar_timer_publisher(rcl_timer_t* timer, int64_t last_call_time)
 {
     ms200_frame_t frame;
-    for (int i = 0; i < 3; i++) { // try 3 times
+    for (int retry = 0; retry < 3; retry++) { // try 3 times
         int rc = lidar_ms200_read(&frame, 0);
         if (rc != ESP_OK) {
             break;
@@ -217,7 +239,6 @@ static void data_init(void)
     lidar_data_init();
 }
 
-
 #define RC_GOTO(fn, label, msg)                                                                      \
     do {                                                                                             \
         rcl_ret_t rc = (fn);                                                                         \
@@ -245,6 +266,9 @@ void micro_ros_task(void* arg)
 
     rcl_subscription_t subscriber_test;
     std_msgs__msg__Int32 msg_test;
+
+    rcl_subscription_t subscriber_twist;
+    geometry_msgs__msg__Twist msg_twist;
 
     rcl_timer_t timer_imu;
     rcl_timer_t timer_lidar;
@@ -284,6 +308,7 @@ void micro_ros_task(void* arg)
 
         node = rcl_get_zero_initialized_node();
         subscriber_test = rcl_get_zero_initialized_subscription();
+        subscriber_twist = rcl_get_zero_initialized_subscription();
         executor = rclc_executor_get_zero_initialized_executor();
         timer_imu = rcl_get_zero_initialized_timer();
         timer_lidar = rcl_get_zero_initialized_timer();
@@ -303,6 +328,11 @@ void micro_ros_task(void* arg)
                     &subscriber_test, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "test"),
                 cleanup,
                 "Failed to init subscriber");
+        RC_GOTO(
+            rclc_subscription_init_default(
+                &subscriber_twist, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"),
+            cleanup,
+            "Failed to init subscriber");
 
         RC_GOTO(rclc_publisher_init_default(
                     &imu_publisher, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu), "imu"),
@@ -322,16 +352,20 @@ void micro_ros_task(void* arg)
             cleanup,
             "Failed to init laser timer");
 
-        // 1 Subscription + 1 Timer
-        RC_GOTO(rclc_executor_init(&executor, &support.context, 3, &allocator),
+        // 2 Subscription + 2 Timer
+        RC_GOTO(rclc_executor_init(&executor, &support.context, 4, &allocator),
                 cleanup,
                 "Failed to init executor");
         RC_GOTO(rclc_executor_add_subscription(
                     &executor, &subscriber_test, &msg_test, &subscription_callback_test, ON_NEW_DATA),
                 cleanup,
                 "Failed to add test subscriber");
-        RC_GOTO(rclc_executor_add_timer(&executor, &timer_imu), cleanup, "Failed to add imu timer");
-        RC_GOTO(rclc_executor_add_timer(&executor, &timer_lidar), cleanup, "Failed to add lidar timer");
+        RC_GOTO(rclc_executor_add_subscription(
+                    &executor, &subscriber_twist, &msg_twist, &subscription_callback_twist, ON_NEW_DATA),
+                cleanup,
+                "Failed to add twist subscriber");
+        // RC_GOTO(rclc_executor_add_timer(&executor, &timer_imu), cleanup, "Failed to add imu timer");
+        // RC_GOTO(rclc_executor_add_timer(&executor, &timer_lidar), cleanup, "Failed to add lidar timer");
 
         sync_time(1000);
 
@@ -343,7 +377,7 @@ void micro_ros_task(void* arg)
                 break;
             }
             if ((esp_timer_get_time() - last_sync_time) > 300000000LL) { // 5 minutes
-                rmw_uros_sync_session(100);
+                sync_time(100);
                 last_sync_time = esp_timer_get_time();
             }
             if (rmw_uros_ping_agent(100, 1) != RCL_RET_OK) {
@@ -361,6 +395,7 @@ void micro_ros_task(void* arg)
         ESP_LOGI(TAG, "Cleaning up resources...\n");
         RCSOFTCHECK(rclc_executor_fini(&executor));
         RCSOFTCHECK(rcl_subscription_fini(&subscriber_test, &node));
+        RCSOFTCHECK(rcl_subscription_fini(&subscriber_twist, &node));
         RCSOFTCHECK(rcl_publisher_fini(&imu_publisher, &node));
         RCSOFTCHECK(rcl_timer_fini(&timer_imu));
         RCSOFTCHECK(rcl_timer_fini(&timer_lidar));
@@ -388,25 +423,7 @@ void app_main(void)
     ESP_ERROR_CHECK(uros_network_interface_initialize());
 #endif
 
-    // Run calibration instead of normal logic
-    // Uncomment the next line to run calibration
-    // motor_calibration();
-
     // pin micro-ros task in APP_CPU to make PRO_CPU to deal with wifi:
-    // xTaskCreate(
-    //     micro_ros_task, "uros_task", CONFIG_MICRO_ROS_APP_STACK, NULL, CONFIG_MICRO_ROS_APP_TASK_PRIO,
-    //     NULL);
-
-    motion_cmd_t cmd = {0.1, 0, 0.5};
-    ESP_ERROR_CHECK_WITHOUT_ABORT(motion_ctrl(&cmd));
-    ESP_LOGI(TAG, "Motion task running!");
-
-    for (int i = 0; i < 30; i++) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        motion_get_speed(&cmd);
-        ESP_LOGI(TAG, "Motion task running %d, spd:%.2f, err_cnt:%d", i, cmd.Vx, motor_get_error_count());
-    }
-
-    ESP_ERROR_CHECK_WITHOUT_ABORT(motion_stop(true));
-    ESP_LOGI(TAG, "Motion task stopped!");
+    xTaskCreate(
+        micro_ros_task, "uros_task", CONFIG_MICRO_ROS_APP_STACK, NULL, CONFIG_MICRO_ROS_APP_TASK_PRIO, NULL);
 }
