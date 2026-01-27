@@ -44,6 +44,7 @@ void app_state_init()
 
 static const char* STATE_CODE[] = {
     "TEST",
+    "DISCONN",
 };
 
 void app_state(app_state_t state)

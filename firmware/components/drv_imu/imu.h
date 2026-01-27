@@ -5,7 +5,7 @@ extern "C" {
 
 #include <stdint.h>
 
-#define IMU_FIFO_SIZE 8
+#define IMU_FIFO_SIZE 32
 
 #define IMU_ACCEL_FSR_G 4
 #define IMU_GYRO_FSR_DPS 2000

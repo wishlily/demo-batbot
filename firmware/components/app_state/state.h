@@ -9,6 +9,7 @@ extern "C" {
 typedef enum {
     APP_STATE_OK,
     APP_STATE_TEST,
+    APP_STATE_DISCONN,
 } app_state_t;
 
 void app_state_init(void);

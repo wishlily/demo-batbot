@@ -203,7 +203,7 @@ void lidar_timer_publisher(rcl_timer_t* timer, int64_t last_call_time)
         if (rc != ESP_OK) {
             break;
         }
-        ESP_LOGI(TAG,
+        ESP_LOGD(TAG,
                  "%5llu us Got [%d mm][%d] end",
                  frame.timestamp,
                  frame.points[0].distance,
@@ -366,6 +366,7 @@ void micro_ros_task(void* arg)
     rcl_timer_t timer_lidar;
     rcl_timer_t timer_odom;
 
+    app_state(APP_STATE_DISCONN);
     while (1) {
         init_options = rcl_get_zero_initialized_init_options();
 
@@ -466,13 +467,14 @@ void micro_ros_task(void* arg)
                     &executor, &subscriber_twist, &msg_twist, &subscription_callback_twist, ON_NEW_DATA),
                 cleanup,
                 "Failed to add twist subscriber");
-        // RC_GOTO(rclc_executor_add_timer(&executor, &timer_imu), cleanup, "Failed to add imu timer");
-        // RC_GOTO(rclc_executor_add_timer(&executor, &timer_lidar), cleanup, "Failed to add lidar timer");
+        RC_GOTO(rclc_executor_add_timer(&executor, &timer_imu), cleanup, "Failed to add imu timer");
+        RC_GOTO(rclc_executor_add_timer(&executor, &timer_lidar), cleanup, "Failed to add lidar timer");
         RC_GOTO(rclc_executor_add_timer(&executor, &timer_odom), cleanup, "Failed to add odom timer");
 
         sync_time(1000);
 
         ESP_LOGI(TAG, "Micro-ROS task running!");
+        app_state(APP_STATE_OK);
         while (1) {
             if (rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)) != RCL_RET_OK) {
                 ESP_LOGI(TAG, "Connection lost/Error in spin. Resetting...");
@@ -493,6 +495,7 @@ void micro_ros_task(void* arg)
             vTaskDelay(pdMS_TO_TICKS(1));
         }
     cleanup:
+        app_state(APP_STATE_DISCONN);
         ESP_LOGI(TAG, "Cleaning up resources...\n");
         RCSOFTCHECK(rclc_executor_fini(&executor));
         RCSOFTCHECK(rcl_subscription_fini(&subscriber_test, &node));
@@ -519,8 +522,8 @@ void app_main(void)
     ESP_ERROR_CHECK(data_init());
 
     app_state_init();
-    // ESP_ERROR_CHECK_WITHOUT_ABORT(imu_init());
-    // ESP_ERROR_CHECK_WITHOUT_ABORT(lidar_ms200_init());
+    ESP_ERROR_CHECK_WITHOUT_ABORT(imu_init());
+    ESP_ERROR_CHECK_WITHOUT_ABORT(lidar_ms200_init());
     ESP_ERROR_CHECK_WITHOUT_ABORT(motion_init());
 
 #if defined(CONFIG_MICRO_ROS_ESP_NETIF_WLAN) || defined(CONFIG_MICRO_ROS_ESP_NETIF_ENET)
@@ -530,4 +533,7 @@ void app_main(void)
     // pin micro-ros task in APP_CPU to make PRO_CPU to deal with wifi:
     xTaskCreate(
         micro_ros_task, "uros_task", CONFIG_MICRO_ROS_APP_STACK, NULL, CONFIG_MICRO_ROS_APP_TASK_PRIO, NULL);
+
+    // Init over
+    beep_on_time(200);
 }
