@@ -12,7 +12,7 @@ Keyboard Teleoperation for the BatBot
 ```bash
 cd ws
 source install/setup.zsh
-ros2 run batbot_teleop keyboard_teleop
+ros2 run batbot_teleop keyboard_teleop --ros-args -r __ns:=<namespace>
 ```
 
 Joystick Teleoperation for the BatBot

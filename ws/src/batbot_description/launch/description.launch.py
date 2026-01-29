@@ -15,6 +15,13 @@ def generate_launch_description():
         default_value=os.path.join(pkg_share, "urdf/batbot", "batbot.urdf.xacro"),
         description="Path to robot description file (URDF or XACRO)",
     )
+
+    use_sim_time_arg = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='false',
+        description='Use simulation time'
+    )
+
     robot_description = ParameterValue(
         Command(["xacro ", LaunchConfiguration("model")]), value_type=str
     )
@@ -23,8 +30,8 @@ def generate_launch_description():
         executable="robot_state_publisher",
         name="robot_state_publisher",
         parameters=[
-            {'use_sim_time': True},
-            {"robot_description": robot_description}
+            {"robot_description": robot_description},
+            {'use_sim_time': LaunchConfiguration('use_sim_time')}
         ],
     )
 
@@ -42,6 +49,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         model_arg,
+        use_sim_time_arg,
         use_jsp_arg,
         robot_state_publisher,
         joint_state_publisher

@@ -25,7 +25,8 @@ def generate_launch_description():
         ]),
         launch_arguments=[
             ("model", LaunchConfiguration("model")),
-            ("use_jsp", "true")
+            ("use_jsp", "true"),
+            ("use_sim_time", "true")
         ]
     )
 

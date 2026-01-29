@@ -32,11 +32,7 @@ class KeyboardTeleop : public rclcpp::Node
 {
 public:
   KeyboardTeleop()
-  : Node("keyboard_teleop"),
-    linear_speed_(0.2),
-    angular_speed_(1.0),
-    stop_mode_(false),
-    axis_switch_(true)
+  : Node("keyboard_teleop"), linear_speed_(0.2), angular_speed_(1.0), axis_switch_(true)
   {
     this->declare_parameter("linear_speed_limit", 1.0);
     this->declare_parameter("angular_speed_limit", 5.0);
@@ -83,8 +79,8 @@ private:
     key = std::tolower(key);
 
     if (key == 's') {
-      stop_mode_ = !stop_mode_;
-      RCLCPP_WARN(this->get_logger(), "Stop mode: %s", stop_mode_ ? "ON" : "OFF");
+      RCLCPP_WARN(this->get_logger(), "Stop mode");
+      publish(true);
       return;
     }
 
@@ -116,13 +112,13 @@ private:
       th_ = 0;
     }
 
-    publish();
+    publish(false);
   }
 
-  void publish()
+  void publish(bool stop)
   {
     geometry_msgs::msg::Twist msg;
-    if (!stop_mode_) {
+    if (!stop) {
       msg.linear.x = axis_switch_ ? linear_speed_ * x_ : 0.0;
       msg.linear.y = axis_switch_ ? 0.0 : linear_speed_ * x_;
       msg.angular.z = angular_speed_ * th_;
@@ -133,7 +129,7 @@ private:
   // Data
   double linear_speed_, angular_speed_, linear_limit_, angular_limit_;
   int x_ = 0, th_ = 0;
-  bool stop_mode_, axis_switch_;
+  bool axis_switch_;
 
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_;
   rclcpp::TimerBase::SharedPtr timer_;
