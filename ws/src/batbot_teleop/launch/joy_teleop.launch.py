@@ -22,12 +22,14 @@ def generate_launch_description():
     joy_node = Node(
         package='joy',
         executable='joy_node',
-        name='joy_node'
+        name='joy_node',
+        namespace='batbot',
     )
     joy_teleop_node = Node(
         package='batbot_teleop',
         executable='joy_teleop',
         name='joy_teleop',
+        namespace='batbot',
         parameters=[{
             'linear_speed_limit': linear_speed_limit,
             'angular_speed_limit': angular_speed_limit
