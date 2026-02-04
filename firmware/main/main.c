@@ -263,10 +263,10 @@ static void odom_euler_to_quat(float yaw, geometry_msgs__msg__Quaternion* q)
     float cr = cos_0; // cos(roll * 0.5)
     float sr = sin_0; // sin(roll * 0.5)
 
-    q->x = cy * cp * cr + sy * sp * sr;
-    q->y = cy * cp * sr - sy * sp * cr;
-    q->z = sy * cp * sr + cy * sp * cr;
-    q->w = sy * cp * cr - cy * sp * sr;
+    q->w = cy * cp * cr + sy * sp * sr;
+    q->x = cy * cp * sr - sy * sp * cr;
+    q->y = sy * cp * sr + cy * sp * cr;
+    q->z = sy * cp * cr - cy * sp * sr;
 }
 
 void odom_timer_publisher(rcl_timer_t* timer, int64_t last_call_time)
