@@ -1,4 +1,14 @@
 {
+  "terminal.integrated.profiles.linux": {
+        "project-zsh": {
+            "path": "/bin/zsh",
+            "args": [
+                "-c",
+                "source .vscode/env.zsh; exec zsh"
+            ]
+        }
+    },
+    "terminal.integrated.defaultProfile.linux": "project-zsh",
   "C_Cpp.intelliSenseEngine": "default",
   "C_Cpp.formatting": "clangFormat",
   "C_Cpp.clang_format_style": "file",
@@ -17,12 +27,6 @@
     "IDF_TARGET": "esp32s3"
   },
   "idf.flashType": "UART",
-  "clangd.path": "/opt/user/esp/.espressif/tools/esp-clang/16.0.1-fe4f10a809/esp-clang/bin/clangd",
-  "clangd.arguments": [
-    "--background-index",
-    "--query-driver=**",
-    "--compile-commands-dir=/home/emily/Documents/ROS/demo/firmware/build"
-  ],
   "python.autoComplete.extraPaths": [
     "/opt/ros/jazzy/lib/python3.12/site-packages"
   ],

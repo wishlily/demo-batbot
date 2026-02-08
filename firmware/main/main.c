@@ -21,6 +21,7 @@
 #include <sensor_msgs/msg/laser_scan.h>
 #include <std_msgs/msg/int32.h>
 #include <nav_msgs/msg/odometry.h>
+#include <batbot_msgs/msg/config.h>
 #include <uros_network_interfaces.h>
 
 #ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
@@ -72,6 +73,8 @@ static const char* TAG = "MAIN";
 static uint64_t time_offset_us = 0; // us
 static uint64_t last_sync_time = 0; // us
 static uint64_t last_ping_time = 0; // us
+static float odom_linear_coeff = 1.0;
+static float odom_angular_coeff = 1.0;
 
 static void sync_time(const int timeout_ms)
 {
@@ -86,20 +89,31 @@ static void sync_time(const int timeout_ms)
     }
 }
 
-// TODO:
-void subscription_callback_test(const void* msgin)
+static void test(uint16_t cmd)
 {
-    const std_msgs__msg__Int32* msg = (const std_msgs__msg__Int32*)msgin;
-    ESP_LOGI(TAG, "Received: %d\n", (int)msg->data);
-    switch (msg->data) {
+    switch (cmd) {
+    case APP_STATE_OK:
+        break;
     case APP_STATE_TEST:
         app_state(APP_STATE_TEST);
         break;
     default:
-        app_state(msg->data);
+        beep_on_time(cmd);
         break;
     }
-    beep_on_time(msg->data);
+}
+
+void subscription_callback_config(const void* msgin)
+{
+    const batbot_msgs__msg__Config* msg = (const batbot_msgs__msg__Config*)msgin;
+    ESP_LOGI(TAG,
+             "Received config: test_byte=%d, odom_coefficient=%.4f,%.4f",
+             msg->test_byte,
+             msg->odom_linear_coeff,
+             msg->odom_angular_coeff);
+    test(msg->test_byte);
+    odom_linear_coeff = msg->odom_linear_coeff;
+    odom_angular_coeff = msg->odom_angular_coeff;
 }
 
 void subscription_callback_twist(const void* msgin)
@@ -296,9 +310,9 @@ void odom_timer_publisher(rcl_timer_t* timer, int64_t last_call_time)
     float delta_x = (speed.Vx * cos_yaw - speed.Vy * sin_yaw) * dt; // m
     float delta_y = (speed.Vx * sin_yaw + speed.Vy * cos_yaw) * dt; // m
 
-    x += delta_x;
-    y += delta_y;
-    yaw += speed.Wz * dt;
+    x += delta_x * odom_linear_coeff;          // add linear coeff
+    y += delta_y * odom_linear_coeff;          // add linear coeff
+    yaw += speed.Wz * odom_angular_coeff * dt; // add angular coeff
 
     odom_msg.pose.pose.position.x = x;
     odom_msg.pose.pose.position.y = y;
@@ -356,8 +370,8 @@ void micro_ros_task(void* arg)
     rclc_executor_t executor;
     rcl_init_options_t init_options;
 
-    rcl_subscription_t subscriber_test;
-    std_msgs__msg__Int32 msg_test;
+    rcl_subscription_t subscriber_conf;
+    batbot_msgs__msg__Config msg_conf;
 
     rcl_subscription_t subscriber_twist;
     geometry_msgs__msg__Twist msg_twist;
@@ -401,7 +415,7 @@ void micro_ros_task(void* arg)
 #endif
 
         node = rcl_get_zero_initialized_node();
-        subscriber_test = rcl_get_zero_initialized_subscription();
+        subscriber_conf = rcl_get_zero_initialized_subscription();
         subscriber_twist = rcl_get_zero_initialized_subscription();
         executor = rclc_executor_get_zero_initialized_executor();
         timer_imu = rcl_get_zero_initialized_timer();
@@ -420,7 +434,7 @@ void micro_ros_task(void* arg)
                 "Failed to init node");
 
         RC_GOTO(rclc_subscription_init_default(
-                    &subscriber_test, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "test"),
+                    &subscriber_conf, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(batbot_msgs, msg, Config), "config"),
                 cleanup,
                 "Failed to init subscriber");
         RC_GOTO(
@@ -460,7 +474,7 @@ void micro_ros_task(void* arg)
                 cleanup,
                 "Failed to init executor");
         RC_GOTO(rclc_executor_add_subscription(
-                    &executor, &subscriber_test, &msg_test, &subscription_callback_test, ON_NEW_DATA),
+                    &executor, &subscriber_conf, &msg_conf, &subscription_callback_config, ON_NEW_DATA),
                 cleanup,
                 "Failed to add test subscriber");
         RC_GOTO(rclc_executor_add_subscription(
@@ -486,7 +500,7 @@ void micro_ros_task(void* arg)
                 last_sync_time = now;
             }
             if ((now - last_ping_time) > 5000000) { // 5 seconds
-                if (rmw_uros_ping_agent(100, 1) != RCL_RET_OK) {
+                if (rmw_uros_ping_agent(100, 3) != RCL_RET_OK) {
                     ESP_LOGW(TAG, "Agent ping failed, resetting...");
                     break;
                 }
@@ -498,7 +512,7 @@ void micro_ros_task(void* arg)
         app_state(APP_STATE_DISCONN);
         ESP_LOGI(TAG, "Cleaning up resources...\n");
         RCSOFTCHECK(rclc_executor_fini(&executor));
-        RCSOFTCHECK(rcl_subscription_fini(&subscriber_test, &node));
+        RCSOFTCHECK(rcl_subscription_fini(&subscriber_conf, &node));
         RCSOFTCHECK(rcl_subscription_fini(&subscriber_twist, &node));
         RCSOFTCHECK(rcl_publisher_fini(&imu_publisher, &node));
         RCSOFTCHECK(rcl_publisher_fini(&lidar_publisher, &node));

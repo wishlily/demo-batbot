@@ -4,6 +4,7 @@
 # Build
 build/**
 install/**
+script/**
 
 # Logs
 log/**
