@@ -1,2 +1,3 @@
 uint16 test_byte
-float32 odom_coefficient
+float32 odom_linear_coeff
+float32 odom_angular_coeff
