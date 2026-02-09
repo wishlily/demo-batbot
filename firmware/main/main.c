@@ -444,7 +444,7 @@ void micro_ros_task(void* arg)
             "Failed to init subscriber");
 
         RC_GOTO(rclc_publisher_init_default(
-                    &imu_publisher, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu), "imu"),
+                    &imu_publisher, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu), "imu_raw"),
                 cleanup,
                 "Failed to init imu publisher");
         RC_GOTO(rclc_timer_init_default2(&timer_imu, &support, RCL_MS_TO_NS(10), imu_timer_publisher, true),
