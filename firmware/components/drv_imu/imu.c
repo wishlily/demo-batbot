@@ -15,6 +15,7 @@
 #include "imu/inv_imu_selftest.h"
 
 #include "system_interface.h"
+#include "imu_fusion.h"
 
 #define LOG_THROTTLE(tag, level, interval_ms, format, ...)                                 \
     do {                                                                                   \
@@ -44,6 +45,7 @@ static TaskHandle_t imu_task_handle = NULL;
 static volatile uint64_t int1_timestamp;
 
 static inv_imu_device_t imu_dev;
+static imu_fusion_handle_t imu_fusion_dev;
 static QueueHandle_t imu_raw_queue = NULL;
 static atomic_int imu_temperature_raw = ATOMIC_VAR_INIT(0);
 
@@ -113,8 +115,12 @@ static int setup_imu(void)
     IMU_ERROR_CHECK(inv_imu_set_gyro_fsr(&imu_dev, IMU_GYRO_FSR_REG));
 
     /* Configure ODR */
-    IMU_ERROR_CHECK(inv_imu_set_accel_frequency(&imu_dev, ACCEL_CONFIG0_ODR_50_HZ));
-    IMU_ERROR_CHECK(inv_imu_set_gyro_frequency(&imu_dev, GYRO_CONFIG0_ODR_50_HZ));
+    if (IMU_RATE == 50) {
+        IMU_ERROR_CHECK(inv_imu_set_accel_frequency(&imu_dev, ACCEL_CONFIG0_ODR_50_HZ));
+        IMU_ERROR_CHECK(inv_imu_set_gyro_frequency(&imu_dev, GYRO_CONFIG0_ODR_50_HZ));
+    } else {
+        return ESP_ERR_INVALID_ARG;
+    }
 
     /* Variable configuration */
     IMU_ERROR_CHECK(configure_fifo());
@@ -154,8 +160,9 @@ static int configure_power_mode()
 
 static void sensor_event_cb(inv_imu_sensor_event_t* event)
 {
+    static uint64_t last_timestamp = 0;
     uint64_t int_timestamp = 0;
-    imu_raw_t raw;
+    imu_data_t data;
 
     si_disable_irq();
     int_timestamp = int1_timestamp;
@@ -171,19 +178,37 @@ static void sensor_event_cb(inv_imu_sensor_event_t* event)
 
     /* Compute timestamp in us */
     if (last_fifo_timestamp == 0 && rollover_num == 0) {
-        raw.timestamp = int_timestamp;
+        data.timestamp = int_timestamp;
     } else {
-        raw.timestamp = event->timestamp_fsync + rollover_num * UINT16_MAX;
-        raw.timestamp *= inv_imu_get_timestamp_resolution_us(&imu_dev);
+        data.timestamp = event->timestamp_fsync + rollover_num * UINT16_MAX;
+        data.timestamp *= inv_imu_get_timestamp_resolution_us(&imu_dev);
     }
-    raw.accel_raw[0] = event->accel[0];
-    raw.accel_raw[1] = event->accel[1];
-    raw.accel_raw[2] = event->accel[2];
-    raw.gyro_raw[0] = event->gyro[0];
-    raw.gyro_raw[1] = event->gyro[1];
-    raw.gyro_raw[2] = event->gyro[2];
 
-    BaseType_t ret = xQueueSend(imu_raw_queue, &raw, 0);
+    uint64_t current_time = data.timestamp;
+    if (last_timestamp == 0) {
+        last_timestamp = current_time;
+        return;
+    }
+    float dt = (current_time - last_timestamp) / 1e6f; // seconds
+    last_timestamp = current_time;
+
+    imu_fusion_data_t out;
+    if (imu_fusion_process_quaternion(&imu_fusion_dev, event->accel, event->gyro, &out, dt)) {
+        return;
+    }
+
+    data.accel_x = out.accel_mss[0];
+    data.accel_y = out.accel_mss[1];
+    data.accel_z = out.accel_mss[2];
+    data.gyro_x = out.gyro_rads[0];
+    data.gyro_y = out.gyro_rads[1];
+    data.gyro_z = out.gyro_rads[2];
+    data.q[0] = out.q[0];
+    data.q[1] = out.q[1];
+    data.q[2] = out.q[2];
+    data.q[3] = out.q[3];
+
+    BaseType_t ret = xQueueSend(imu_raw_queue, &data, 0);
     if (ret != pdTRUE) {
         LOGW_THROTTLE(IMU_LOG_TAG, 1000, "Queue full, packet dropped.");
     }
@@ -246,10 +271,11 @@ static void imu_task(void* arg)
 
 int imu_init(void)
 {
-    imu_raw_queue = xQueueCreate(IMU_FIFO_SIZE, sizeof(imu_raw_t));
+    imu_raw_queue = xQueueCreate(IMU_FIFO_SIZE, sizeof(imu_data_t));
     if (imu_raw_queue == NULL) {
         return INV_ERROR_MEM;
     }
+    imu_fusion_init(&imu_fusion_dev, IMU_RATE, 0.5, IMU_ACCEL_FSR_G, IMU_GYRO_FSR_DPS);
 
     IMU_ERROR_CHECK(setup_mcu());
     si_sleep_us(50000);
@@ -266,27 +292,14 @@ float imu_get_temperature(void)
 }
 
 #define GRAVITY_MSS 9.80665f
-#define ADC_SCALE_16BIT 32768.0f
 #define DEG_TO_RAD (M_PI / 180.0f)
 
 // return 0 on success
 // return INV_ERROR_TIMEOUT if timeout
 int imu_wait_for_data(imu_data_t* data, int32_t ticks_to_wait)
 {
-    imu_raw_t rx_data;
-    if (xQueueReceive(imu_raw_queue, &rx_data, ticks_to_wait) == pdTRUE) {
-        float accel_scale = (float)IMU_ACCEL_FSR_G * GRAVITY_MSS / ADC_SCALE_16BIT;
-        float gyro_scale = (float)IMU_GYRO_FSR_DPS * DEG_TO_RAD / ADC_SCALE_16BIT;
-
-        data->accel_x = (float)rx_data.accel_raw[0] * accel_scale;
-        data->accel_y = (float)rx_data.accel_raw[1] * accel_scale;
-        data->accel_z = (float)rx_data.accel_raw[2] * accel_scale;
-        data->gyro_x = (float)rx_data.gyro_raw[0] * gyro_scale;
-        data->gyro_y = (float)rx_data.gyro_raw[1] * gyro_scale;
-        data->gyro_z = (float)rx_data.gyro_raw[2] * gyro_scale;
-
-        data->timestamp = rx_data.timestamp;
+    if (xQueueReceive(imu_raw_queue, data, ticks_to_wait) == pdTRUE) {
         return 0;
     }
-    return INV_ERROR_TIMEOUT;
+    return ESP_ERR_TIMEOUT;
 }

@@ -6,18 +6,13 @@ extern "C" {
 #include <stdint.h>
 
 #define IMU_FIFO_SIZE 32
+#define IMU_RATE 50
 
 #define IMU_ACCEL_FSR_G 4
 #define IMU_GYRO_FSR_DPS 2000
 
 #define IMU_ACCEL_FSR_REG ACCEL_CONFIG0_FS_SEL_4g
 #define IMU_GYRO_FSR_REG GYRO_CONFIG0_FS_SEL_2000dps
-
-typedef struct {
-    int accel_raw[3];
-    int gyro_raw[3];
-    uint64_t timestamp; // fifo timestamp
-} imu_raw_t;
 
 typedef struct {
     float accel_x;
@@ -27,6 +22,7 @@ typedef struct {
     float gyro_y;
     float gyro_z;
     uint64_t timestamp; // us
+    float q[4];         // Quaternion [w, x, y, z]
 } imu_data_t;
 
 

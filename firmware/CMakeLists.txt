@@ -2,7 +2,7 @@
 # CMakeLists in this exact order for cmake to work correctly
 cmake_minimum_required(VERSION 3.16)
 
-# Fetch the content using cmake
+# Fetch ICM-42670-P code
 include(FetchContent)
 FetchContent_Declare(
     tdk_lib
@@ -16,6 +16,20 @@ if(NOT tdk_lib_POPULATED)
     FetchContent_Populate(tdk_lib)
 endif()
 set(TDK_ROOT "${tdk_lib_SOURCE_DIR}" CACHE INTERNAL "Path to TDK Driver sources")
+
+# Fetch Fusion
+FetchContent_Declare(
+    fusion_lib
+    GIT_REPOSITORY https://github.com/xioTechnologies/Fusion.git
+    GIT_TAG        v1.2.11
+    GIT_SHALLOW    TRUE
+)
+FetchContent_GetProperties(fusion_lib)
+if(NOT fusion_lib_POPULATED)
+    message(STATUS "Downloading Fusion Library v1.2.11...")
+    FetchContent_Populate(fusion_lib)
+endif()
+set(FUSION_PATH "${fusion_lib_SOURCE_DIR}/Fusion" CACHE INTERNAL "Path to Fusion source")
 
 # micro_ros_espidf_component add extra_packages, clean: idf.py clean-microros
 get_filename_component(ROS_WS_SRC_DIR "${CMAKE_CURRENT_LIST_DIR}/../ws/src" ABSOLUTE)

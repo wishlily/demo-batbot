@@ -160,6 +160,11 @@ void imu_timer_publisher(rcl_timer_t* timer, int64_t last_call_time)
         imu_msg.angular_velocity.y = data.gyro_y;
         imu_msg.angular_velocity.z = data.gyro_z;
 
+        imu_msg.orientation.w = data.q[0];
+        imu_msg.orientation.x = data.q[1];
+        imu_msg.orientation.y = data.q[2];
+        imu_msg.orientation.z = data.q[3];
+
         uint64_t now_us = data.timestamp + time_offset_us;
         imu_msg.header.stamp.sec = now_us / 1000000;
         imu_msg.header.stamp.nanosec = (now_us % 1000000) * 1000;
