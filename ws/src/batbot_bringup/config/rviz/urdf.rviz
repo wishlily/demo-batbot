@@ -17,6 +17,33 @@ Visualization Manager:
     - Class: rviz_default_plugins/TF
       Name: TF
       Value: true
+    - Alpha: 1.0
+      Class: rviz_default_plugins/LaserScan
+      Color: 255; 0; 0
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: LaserScan
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.05
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /batbot/scan
+      Target Frame: laser_frame
+      Use Fixed Frame: true
+      Use rainbow: true
   Global Options:
     Fixed Frame: odom
   Tools:
