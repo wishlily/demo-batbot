@@ -22,7 +22,7 @@ menu "micro-ROS example-app settings"
         
     config MICRO_ROS_NAMESPACE
         string "Ros namespace of the micro-ROS"
-        default ""
+        default "batbot"
         help
         The ROS node namespace
         

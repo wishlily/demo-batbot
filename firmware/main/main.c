@@ -137,7 +137,24 @@ static rcl_publisher_t imu_publisher;
 static void imu_data_init(void)
 {
     sensor_msgs__msg__Imu__init(&imu_msg);
-    rosidl_runtime_c__String__assign(&imu_msg.header.frame_id, "imu_frame");
+    rosidl_runtime_c__String__assign(&imu_msg.header.frame_id, "imu_link");
+    for (int i = 0; i < 9; i++) {
+        imu_msg.orientation_covariance[i] = 0.0;
+        imu_msg.angular_velocity_covariance[i] = 0.0;
+        imu_msg.linear_acceleration_covariance[i] = 0.0;
+    }
+    // [roll, pitch, yaw]
+    imu_msg.orientation_covariance[0] = 0.0025;
+    imu_msg.orientation_covariance[4] = 0.0025;
+    imu_msg.orientation_covariance[8] = 0.01;
+    // [wx, wy, wz]
+    imu_msg.angular_velocity_covariance[0] = 0.0004;
+    imu_msg.angular_velocity_covariance[4] = 0.0004;
+    imu_msg.angular_velocity_covariance[8] = 0.0008;
+    // [ax, ay, az]
+    imu_msg.linear_acceleration_covariance[0] = 0.04;
+    imu_msg.linear_acceleration_covariance[4] = 0.04;
+    imu_msg.linear_acceleration_covariance[8] = 0.08;
 
     imu_publisher = rcl_get_zero_initialized_publisher();
 }
@@ -252,7 +269,7 @@ static rcl_publisher_t odom_publisher;
 static void odom_data_init(void)
 {
     nav_msgs__msg__Odometry__init(&odom_msg);
-    rosidl_runtime_c__String__assign(&odom_msg.header.frame_id, "odom_frame");
+    rosidl_runtime_c__String__assign(&odom_msg.header.frame_id, "odom");
     rosidl_runtime_c__String__assign(&odom_msg.child_frame_id, "base_footprint");
 
     for (int i = 0; i < 36; i++) {
