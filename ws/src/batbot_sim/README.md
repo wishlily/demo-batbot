@@ -7,7 +7,7 @@ cd ws
 colcon build --packages-select batbot_sim
 ```
 
-Use Gazebo for simulation
+Run simulation in Gazebo
 
 ```bash
 cd ws

@@ -7,7 +7,7 @@ cd ws
 colcon build --packages-select batbot_description
 ```
 
-Use RViz to display for testing
+Display in RViz for testing
 
 ```bash
 cd ws

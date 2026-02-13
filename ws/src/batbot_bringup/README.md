@@ -7,7 +7,7 @@ cd ws
 colcon build --packages-select batbot_bringup
 ```
 
-Use RViz to display the car motion
+Display robot motion in RViz
 
 ```bash
 cd ws
