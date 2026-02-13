@@ -202,7 +202,7 @@ static rcl_publisher_t lidar_publisher;
 static esp_err_t lidar_data_init(void)
 {
     sensor_msgs__msg__LaserScan__init(&lidar_msg);
-    rosidl_runtime_c__String__assign(&lidar_msg.header.frame_id, "laser_frame");
+    rosidl_runtime_c__String__assign(&lidar_msg.header.frame_id, "laser_link");
     lidar_msg.angle_min = -180 * M_PI / 180.0;
     lidar_msg.angle_max = 180 * M_PI / 180.0;
 
