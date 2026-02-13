@@ -38,7 +38,10 @@ def generate_launch_description():
         name='ekf_filter_node',
         namespace='batbot',
         output='screen',
-        parameters=[localization_config_file]
+        parameters=[localization_config_file],
+        remappings=[
+            ('odometry/filtered', 'odom')
+        ]
     )
 
     rviz_config_file = os.path.join(pkg_share, "config/rviz", "urdf.rviz")
