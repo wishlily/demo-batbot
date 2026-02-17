@@ -1,0 +1,22 @@
+slam_toolbox:
+  ros__parameters:
+
+    # Basic configuration
+    use_sim_time: false
+    mode: mapping
+
+    # TF frames
+    map_frame: map
+    odom_frame: odom
+    base_frame: base_footprint
+    scan_topic: /scan
+
+    # Mapping parameters
+    resolution: 0.05
+    max_laser_range: 8.0
+
+    # Update frequency
+    map_update_interval: 1.0
+
+    # Loop closure detection
+    loop_closure_enabled: true
