@@ -203,10 +203,10 @@ static esp_err_t lidar_data_init(void)
 {
     sensor_msgs__msg__LaserScan__init(&lidar_msg);
     rosidl_runtime_c__String__assign(&lidar_msg.header.frame_id, "laser_link");
+    // Publish LaserScan in ROS convention: angles increase counter-clockwise from -pi to +pi.
     lidar_msg.angle_min = -180 * M_PI / 180.0;
-    lidar_msg.angle_max = 180 * M_PI / 180.0;
-
     lidar_msg.angle_increment = 1 * M_PI / 180.0;
+    lidar_msg.angle_max = lidar_msg.angle_min + (MS200_POINT_MAX - 1) * lidar_msg.angle_increment;
     lidar_msg.range_min = 0.12;
     lidar_msg.range_max = 8.0;
 
@@ -222,7 +222,7 @@ static esp_err_t lidar_data_init(void)
     }
     for (int i = 0; i < MS200_POINT_MAX; i++) {
         lidar_msg.intensities.data[i] = 0;
-        lidar_msg.ranges.data[i] = 0;
+        lidar_msg.ranges.data[i] = NAN;
     }
 
     lidar_publisher = rcl_get_zero_initialized_publisher();
@@ -245,9 +245,18 @@ void lidar_timer_publisher(rcl_timer_t* timer, int64_t last_call_time)
                  frame.points[0].distance,
                  frame.points[0].intensity);
         for (int i = 0; i < MS200_POINT_MAX; i++) {
-            int raw_index = (i + 180) % MS200_POINT_MAX;
-            lidar_msg.ranges.data[i] = frame.points[raw_index].distance / 1000.0; // mm to m
-            lidar_msg.intensities.data[i] = frame.points[raw_index].intensity;
+            // MS200: 0 deg is front and angles increase clockwise.
+            // Convert to ROS LaserScan ordering (counter-clockwise) while keeping angle_min=-pi.
+            // Result: i=180 -> 0 deg (front), i=90 -> -90 deg (right), i=270 -> +90 deg (left).
+            int raw_index = (540 - i) % MS200_POINT_MAX;
+            float range_m = frame.points[raw_index].distance / 1000.0f; // mm to m
+            uint8_t intensity = frame.points[raw_index].intensity;
+            if (intensity <= 15 || range_m < lidar_msg.range_min || range_m > lidar_msg.range_max) {
+                lidar_msg.ranges.data[i] = NAN;
+            } else {
+                lidar_msg.ranges.data[i] = range_m;
+            }
+            lidar_msg.intensities.data[i] = intensity;
         }
 
         uint64_t now_us = frame.timestamp + time_offset_us;
@@ -256,7 +265,7 @@ void lidar_timer_publisher(rcl_timer_t* timer, int64_t last_call_time)
 
         rc = rcl_publish(&lidar_publisher, &lidar_msg, NULL);
         if (rc != RCL_RET_OK) {
-            ESP_LOGE(TAG, "Failed to publish Laser message: %d", err_count++);
+            ESP_LOGE(TAG, "Failed to publish Laser message rc=%d, count=%d", (int)rc, err_count++);
         } else {
             err_count = 0;
         }
