@@ -19,7 +19,7 @@ This firmware provides a fully functional ROS2 node running on ESP32 that commun
 
 | Topic | Message Type | Rate | Description |
 |-------|--------------|------|-------------|
-| `/imu_raw` | `sensor_msgs/msg/Imu` | 50 Hz | IMU sensor data (acceleration, angular velocity, orientation) |
+| `/imu_raw` | `sensor_msgs/msg/Imu` | 25 Hz | IMU sensor data (acceleration, angular velocity, orientation) |
 | `/scan` | `sensor_msgs/msg/LaserScan` | 10 Hz | 360° laser scan data from MS200 lidar |
 | `/odom_raw` | `nav_msgs/msg/Odometry` | 20 Hz | Odometry estimation from wheel encoders |
 

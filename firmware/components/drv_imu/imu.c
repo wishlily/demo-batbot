@@ -160,6 +160,7 @@ static int configure_power_mode()
 
 static void sensor_event_cb(inv_imu_sensor_event_t* event)
 {
+    static uint16_t downsample_rate = 0;
     static uint64_t last_timestamp = 0;
     uint64_t int_timestamp = 0;
     imu_data_t data;
@@ -197,6 +198,12 @@ static void sensor_event_cb(inv_imu_sensor_event_t* event)
         return;
     }
 
+    atomic_store(&imu_temperature_raw, event->temperature);
+
+    if ((downsample_rate++) % IMU_DOWNSAMPLE_RATE != 0) {
+        return;
+    }
+
     data.accel_x = out.accel_mss[0];
     data.accel_y = out.accel_mss[1];
     data.accel_z = out.accel_mss[2];
@@ -212,7 +219,6 @@ static void sensor_event_cb(inv_imu_sensor_event_t* event)
     if (ret != pdTRUE) {
         LOGW_THROTTLE(IMU_LOG_TAG, 1000, "Queue full, packet dropped.");
     }
-    atomic_store(&imu_temperature_raw, event->temperature);
 }
 
 static int imu_selftest(void)

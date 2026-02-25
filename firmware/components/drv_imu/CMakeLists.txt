@@ -6,7 +6,7 @@ if(NOT EXISTS "${FUSION_PATH}")
     message(WARNING "Fusion Lib not found at ${FUSION_PATH}. It will be downloaded during build.")
 endif()
 
-file(GLOB FUSION_SRCS "imu_fusion.c" "${FUSION_PATH}/*.c")
+file(GLOB FUSION_SRCS "${FUSION_PATH}/*.c")
 file(GLOB_RECURSE COMPONENT_SRC *.c)
 
 idf_component_register(

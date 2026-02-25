@@ -7,6 +7,7 @@ extern "C" {
 
 #define IMU_FIFO_SIZE 32
 #define IMU_RATE 50
+#define IMU_DOWNSAMPLE_RATE 2
 
 #define IMU_ACCEL_FSR_G 4
 #define IMU_GYRO_FSR_DPS 2000
