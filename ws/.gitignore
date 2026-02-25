@@ -6,6 +6,9 @@ build/**
 install/**
 script/**
 
+**_map.pgm
+**_map.yaml
+
 # Logs
 maps/**
 log/**
